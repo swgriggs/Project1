@@ -5,3 +5,92 @@ date: today
 date-format: D MMMM YYYY
 format: html
 ---
+
+Get the usual process to work with a given URL.
+
+```{r}
+
+```
+
+Write a helper function to take what is returned by GET() and turn it into a nice tibble.
+
+```{r Helper Function}
+
+```
+
+**Data Processing Requirements**
+
+Write a function to query the API that allows the user to change the following items:
+
+R1.1 - Year of survey (2022 as default). Check that a valid value was given (number between 2010 and 2022)
+
+R1.2 – Specify the numeric variables to be returned (AGEP and PWGTP as default). PWGTP should always be returned. Options for the user should be AGEP, GASP, GRPIP, JWAP (time), JWDP (time), and JWMNP \\
+
+R1.2.1 - Your function should turn variables into numeric values or time values (use the middle of the time period) where appropriate. At least one numeric variable other than PWGTP must be returned \\
+
+R1.3 - Specify the categorical variables to be returned (SEX as default).Options for the user should be FER, HHL, HISPEED, JWTRNS, SCH, SCHL, and SEX.
+
+R1.3.1 - Your function should turn variables into factors with appropriate levels, where appropriate. At least one categorical variable must be returned. Check that the variables asked for are in this set of variables.
+
+R1.4 – Specify the geography level: All, Region, Division, or State (with the default of All). Check that the value specified by the user is one of the above values
+
+R1.4.1 – An optional argument to subset the data (this subsetting should be on the API call itself, not on what is returned - see the examples in the links above). The user should be able to specify specific Regions, Divisions, or States for this part (and only those specified geography levels would be returned) ∗ How you allow them to specify this is up to you (you’ll have to parse it appropriately).
+
+```{r Single Year Function}
+
+```
+
+R1.5 - write a function that allows the user to specify multiple years of survey data (and all the other options above). This function should call your single year function as many times as needed and then combine the data into one final tibble (a year variable should be included in this final tibble).
+
+```{r Multi Year Function}
+
+```
+
+
+**Obtaining Person Level Records**
+
+Lastly, we need to process the data in our tibble appropriately. The PWGTP variable actually represents the number of (people) observations there should be for a particular row. PWGTP is the number of people in a household. If we wanted to look at individuals, we would have to create new rows to represent the individuals.
+
+We won’t do this, but we could create a new tibble with each row replicated PWGTP times. (This would create very large data frames in some instances and processing would be slow!)
+
+**Writing a Generic Function for Summarizing**
+
+R2.1 Create your own custom object class called census.
+```{r Census Object Class}
+
+```
+
+
+R2.2 Create your own summary function that produces summary statistics on the census object.
+
+R2.2.1 For the census summary method, let’s write a function that produces means and standard deviations for our numeric variable(s) and counts for our categorical variable(s).
+
+R2.2.2 - This function should take three arguments: the tibble with class census, the numeric variable(s) to summarize, the categorical variable(s) to summarize. 
+
+R2.2.3 - By default, it should summarize all numeric variables (other than PWGTP) and all categorical variables in the tibble. However, the user should be able to specify the variables they’d like to summarize if they’d like.
+
+```{r Summary Function}
+
+```
+
+
+R2.2.4 Test out this function by running summary(*your_census_tibble*) on something you’ve returned from your census API function.
+
+
+```{r Summary Function Verification}
+
+```
+
+
+R2.3 - Similarly, let’s create a generic plot() function for a census class tibble. Require the user to specify one categorical variable and one numeric variable for plotting purposes.
+
+```{r Plotting Function}
+
+```
+
+
+**Web Page**
+
+R 3.1 - Your web page should have a narrative going through your process of creating the above functions and testing them.
+
+R3.2 - You should have a section at the end where you investigate something interesting from the data using your API function and plotting/summarizing functions.
