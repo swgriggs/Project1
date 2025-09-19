@@ -5,6 +5,7 @@ date: today
 date-format: D MMMM YYYY
 format: html
 ---
+
 Get the usual process to work with a given URL.
 
 ```{r, }
@@ -14,7 +15,7 @@ library("rjson")
 ```
 
 ```{r}
-variables <- c("PWGTP","AGEP","SEX")
+variables <- c("PWGTP","AGEP","SEX", "FER", "JWTRNS")
 region <- "state:01"
 year <- "2022"
 
@@ -23,12 +24,13 @@ res <- GET(url, query = list(get=paste(variables, collapse=","), `for`=region))
 ```
 
 Write a helper function to take what is returned by GET() and turn it into a nice tibble.
+
 ```{r}
 get_pums_tibble <- function(html_page) {
     content <- content(html_page, as="parsed")
     content <- lapply(content, unlist) |>
                 as.data.frame(col.names=1:length(content)) |>
-                as.matrix() |> t() |> as_tibble()
+                as.matrix() |> t() |> as_tibble() #why a matrix first?
     content <- content |> setNames(content[1,]) |> slice(-1)
     return(content)
 }
@@ -40,9 +42,9 @@ Write a function to query the API that allows the user to change the following i
 
 R1.1 - Year of survey (2022 as default). Check that a valid value was given (number between 2010 and 2022)
 
-R1.2 – Specify the numeric variables to be returned (AGEP and PWGTP as default). PWGTP should always be returned. Options for the user should be AGEP, GASP, GRPIP, JWAP (time), JWDP (time), and JWMNP \\
+R1.2 – Specify the numeric variables to be returned (AGEP and PWGTP as default). PWGTP should always be returned. Options for the user should be AGEP, GASP, GRPIP, JWAP (time), JWDP (time), and JWMNP
 
-R1.2.1 - Your function should turn variables into numeric values or time values (use the middle of the time period) where appropriate. At least one numeric variable other than PWGTP must be returned \\
+R1.2.1 - Your function should turn variables into numeric values or time values (use the middle of the time period) where appropriate. At least one numeric variable other than PWGTP must be returned
 
 R1.3 - Specify the categorical variables to be returned (SEX as default).Options for the user should be FER, HHL, HISPEED, JWTRNS, SCH, SCHL, and SEX.
 
@@ -53,54 +55,86 @@ R1.4 – Specify the geography level: All, Region, Division, or State (with the 
 R1.4.1 – An optional argument to subset the data (this subsetting should be on the API call itself, not on what is returned - see the examples in the links above). The user should be able to specify specific Regions, Divisions, or States for this part (and only those specified geography levels would be returned) ∗ How you allow them to specify this is up to you (you’ll have to parse it appropriately).
 
 ```{r Single Year Function}
-get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP")) {
-    # R1.1
+
+get_single_year <- function(
+        year = 2022, num_vars = c("AGEP", "PWGTP"), 
+        cat_vars = "SEX", geography = "All", geography_level = NULL)
+    {
+    # R1.1- Validate Survey Year
     if (!is.numeric(year)) {
         stop("Year must be numeric")
     } 
     if (!(year >= 2010 & year <= 2022)) {
         stop("Year must be between 2010 and 2022 inclusive")
     }
-    # R1.2
+    # R1.2 - Validate Numeric Variables
     if (!("PWGTP" %in% num_vars)) {
         stop("PWGTP must be included in the numeric variables")
     } else if (!all(num_vars %in% c("AGEP","GASP","GRPIP","JWAP","JWDP","JWMNP","PWGTP"))) {
         stop("Undefined numeric variable(s)")
     }
     
-    region <- "state:01"
+    #region <- "state:01"
     url <- paste0("https://api.census.gov/data/",
                   as.character(year),
                   "/acs/acs1/pums?")
     
-    res <- GET(url, query = list(get=paste(num_vars, collapse=","), `for`=region))
+    res <- GET(url, query = list(get=paste(num_vars, collapse=","), `for`= geography))
     df <- get_pums_tibble(res)
     
-    #R.3
+    #R1.2.1 - Convert Journey to Work Departure Time to HH:MM Format
     # parsing JWDP and JWAP is broken
     if ("JWDP" %in% num_vars) {
-        jwdp_file <- paste0("https://api.census.gov/data/", as.character(year), "/acs/acs1/pums/variables/JWDP.json")
-        jwdp_map <- fromJSON(paste(readLines(jwdp_file), collapse=""))$values$item |> as.list()
+        jwdp_file <- paste0("https://api.census.gov/data/", as.character(year), ... = 
+                                "/acs/acs1/pums/variables/JWDP.json")
+        jwdp_map <- fromJSON(paste(readLines(jwdp_file), collapse=""))$values$item |> 
+            as.list()
         for (i in 1:length(df)) {
-            iv <- strsplit(jwdp_map[[df$JWDF[i]]], " to ")[[1]] |> str_remove_all("\\.") %>% str_to_upper()
-            mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2) |> hms::as_hms()
+            iv <- strsplit(jwdp_map[[df$JWDF[i]]], " to ")[[1]] |> str_remove_all("\\.") 
+            %>% str_to_upper()
+            mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2) 
+            |> hms::as_hms()
             df$JWDP[i] <- mid
         }
     }
     
+    #R1.2.1 - Convert Journey to Work Arrival Time to HH:MM Format
     if ("JWAP" %in% num_vars) {
-        jwap_file <- paste0("https://api.census.gov/data/", as.character(year), "/acs/acs1/pums/variables/JWAP.json")
-        jwap_map <- fromJSON(paste(readLines(jwap_file), collapse=""))$values$item |> as.list()
+        jwap_file <- paste0("https://api.census.gov/data/", as.character(year), 
+                            "/acs/acs1/pums/variables/JWAP.json")
+        jwap_map <- fromJSON(paste(readLines(jwap_file), collapse=""))$values$item |> 
+            as.list()
         for (i in 1:length(df)) {
-            iv <- strsplit(jwap_map[[df$JWAP[i]]], " to ")[[1]] |> str_remove_all("\\.") %>% str_to_upper()
-            mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2) |> hms::as_hms()
+            iv <- strsplit(jwap_map[[df$JWAP[i]]], " to ")[[1]] |> str_remove_all("\\.") 
+            %>% str_to_upper()
+            mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2) 
+            |> hms::as_hms()
             df$JWAP[i] <- mid
         }
     }
     
-    df <- df |> mutate(across(where(is.character), ~ as.numeric(.)))
-    return(df)
+    #R1.3 - Validate Categorical Variables
+    if (!all(cat_vars %in% c("FER", "HHL", "HISPEED", "JWTRNS", "SCH", "SCHL", "SEX"))) {
+        stop("Undefined categorical variable(s)")
+    }
+    
+    #R1.4 - Validate Specified Geography
+    if (!all(geography %in% c("All", "Region", "Division", "State"))) {
+        stop("Geography must be 'All', 'Region', 'Division' or 'State'")
+    } 
+    
+    
+    
+    #R1.2.1 - Convert Numeric Variables to Numeric
+    df_num <- df |> mutate(across(all_of(num_vars), ~ as.numeric(.)))
+    
+    #R1.3.1 - Convert Categorical Variables into Factors with Levels
+    df_cat <- df |> mutate(across(all_of(cat_vars), ~ as.factor(.)))
+    
+
+    return(list(cat = df_cat, num = df_num))
 }
+
 ```
 
 R1.5 - write a function that allows the user to specify multiple years of survey data (and all the other options above). This function should call your single year function as many times as needed and then combine the data into one final tibble (a year variable should be included in this final tibble).
@@ -108,7 +142,6 @@ R1.5 - write a function that allows the user to specify multiple years of survey
 ```{r Multi Year Function}
 
 ```
-
 
 **Obtaining Person Level Records**
 
@@ -119,16 +152,16 @@ We won’t do this, but we could create a new tibble with each row replicated PW
 **Writing a Generic Function for Summarizing**
 
 R2.1 Create your own custom object class called census.
+
 ```{r Census Object Class}
 
 ```
-
 
 R2.2 Create your own summary function that produces summary statistics on the census object.
 
 R2.2.1 For the census summary method, let’s write a function that produces means and standard deviations for our numeric variable(s) and counts for our categorical variable(s).
 
-R2.2.2 - This function should take three arguments: the tibble with class census, the numeric variable(s) to summarize, the categorical variable(s) to summarize. 
+R2.2.2 - This function should take three arguments: the tibble with class census, the numeric variable(s) to summarize, the categorical variable(s) to summarize.
 
 R2.2.3 - By default, it should summarize all numeric variables (other than PWGTP) and all categorical variables in the tibble. However, the user should be able to specify the variables they’d like to summarize if they’d like.
 
@@ -136,21 +169,17 @@ R2.2.3 - By default, it should summarize all numeric variables (other than PWGTP
 
 ```
 
-
 R2.2.4 Test out this function by running summary(*your_census_tibble*) on something you’ve returned from your census API function.
-
 
 ```{r Summary Function Verification}
 
 ```
-
 
 R2.3 - Similarly, let’s create a generic plot() function for a census class tibble. Require the user to specify one categorical variable and one numeric variable for plotting purposes.
 
 ```{r Plotting Function}
 
 ```
-
 
 **Web Page**
 
