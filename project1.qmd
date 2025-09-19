@@ -5,17 +5,33 @@ date: today
 date-format: D MMMM YYYY
 format: html
 ---
-
 Get the usual process to work with a given URL.
 
-```{r}
+```{r, }
+library("tidyverse")
+library("httr")
+library("rjson")
+```
 
+```{r}
+variables <- c("PWGTP","AGEP","SEX")
+region <- "state:01"
+year <- "2022"
+
+url <- paste0("https://api.census.gov/data/", year, "/acs/acs1/pums?")
+res <- GET(url, query = list(get=paste(variables, collapse=","), `for`=region))
 ```
 
 Write a helper function to take what is returned by GET() and turn it into a nice tibble.
-
-```{r Helper Function}
-
+```{r}
+get_pums_tibble <- function(html_page) {
+    content <- content(html_page, as="parsed")
+    content <- lapply(content, unlist) |>
+                as.data.frame(col.names=1:length(content)) |>
+                as.matrix() |> t() |> as_tibble()
+    content <- content |> setNames(content[1,]) |> slice(-1)
+    return(content)
+}
 ```
 
 **Data Processing Requirements**
@@ -37,7 +53,54 @@ R1.4 – Specify the geography level: All, Region, Division, or State (with the 
 R1.4.1 – An optional argument to subset the data (this subsetting should be on the API call itself, not on what is returned - see the examples in the links above). The user should be able to specify specific Regions, Divisions, or States for this part (and only those specified geography levels would be returned) ∗ How you allow them to specify this is up to you (you’ll have to parse it appropriately).
 
 ```{r Single Year Function}
-
+get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP")) {
+    # R1.1
+    if (!is.numeric(year)) {
+        stop("Year must be numeric")
+    } 
+    if (!(year >= 2010 & year <= 2022)) {
+        stop("Year must be between 2010 and 2022 inclusive")
+    }
+    # R1.2
+    if (!("PWGTP" %in% num_vars)) {
+        stop("PWGTP must be included in the numeric variables")
+    } else if (!all(num_vars %in% c("AGEP","GASP","GRPIP","JWAP","JWDP","JWMNP","PWGTP"))) {
+        stop("Undefined numeric variable(s)")
+    }
+    
+    region <- "state:01"
+    url <- paste0("https://api.census.gov/data/",
+                  as.character(year),
+                  "/acs/acs1/pums?")
+    
+    res <- GET(url, query = list(get=paste(num_vars, collapse=","), `for`=region))
+    df <- get_pums_tibble(res)
+    
+    #R.3
+    # parsing JWDP and JWAP is broken
+    if ("JWDP" %in% num_vars) {
+        jwdp_file <- paste0("https://api.census.gov/data/", as.character(year), "/acs/acs1/pums/variables/JWDP.json")
+        jwdp_map <- fromJSON(paste(readLines(jwdp_file), collapse=""))$values$item |> as.list()
+        for (i in 1:length(df)) {
+            iv <- strsplit(jwdp_map[[df$JWDF[i]]], " to ")[[1]] |> str_remove_all("\\.") %>% str_to_upper()
+            mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2) |> hms::as_hms()
+            df$JWDP[i] <- mid
+        }
+    }
+    
+    if ("JWAP" %in% num_vars) {
+        jwap_file <- paste0("https://api.census.gov/data/", as.character(year), "/acs/acs1/pums/variables/JWAP.json")
+        jwap_map <- fromJSON(paste(readLines(jwap_file), collapse=""))$values$item |> as.list()
+        for (i in 1:length(df)) {
+            iv <- strsplit(jwap_map[[df$JWAP[i]]], " to ")[[1]] |> str_remove_all("\\.") %>% str_to_upper()
+            mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2) |> hms::as_hms()
+            df$JWAP[i] <- mid
+        }
+    }
+    
+    df <- df |> mutate(across(where(is.character), ~ as.numeric(.)))
+    return(df)
+}
 ```
 
 R1.5 - write a function that allows the user to specify multiple years of survey data (and all the other options above). This function should call your single year function as many times as needed and then combine the data into one final tibble (a year variable should be included in this final tibble).
