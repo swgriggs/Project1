@@ -58,7 +58,7 @@ R1.4.1 – An optional argument to subset the data (this subsetting should be on
 
 get_single_year <- function(
         year = 2022, num_vars = c("AGEP", "PWGTP"), 
-        cat_vars = "SEX", geography = "All", geography_level = NULL)
+        cat_vars = c("SEX"), geography = "All", geography_level = NULL)
     {
     # R1.1- Validate Survey Year
     if (!is.numeric(year)) {
@@ -79,7 +79,8 @@ get_single_year <- function(
                   as.character(year),
                   "/acs/acs1/pums?")
     
-    res <- GET(url, query = list(get=paste(num_vars, collapse=","), `for`= geography))
+    res <- GET(url, query = list(get=paste(num_vars, collapse=","), `for`= paste0(geography,":", 
+                                                                                  geography_level)))
     df <- get_pums_tibble(res)
     
     #R1.2.1 - Convert Journey to Work Departure Time to HH:MM Format
@@ -96,7 +97,8 @@ get_single_year <- function(
             if (df$JWDP[i] == "000") {
                 df$JWDP[i] <- NA
             } else {
-                iv <- strsplit(jwdp_map[[ df$JWDP[i] ]], " to ")[[1]] |> str_remove_all("\\.") |> str_to_upper()
+                iv <- strsplit(jwdp_map[[ df$JWDP[i] ]], " to ")[[1]] |> str_remove_all("\\.") |> 
+                    str_to_upper()
                 mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2)
                 df$JWDP[i] <- mid
             }
@@ -118,7 +120,8 @@ get_single_year <- function(
             if (df$JWAP[i] == "000") {
                 df$JWAP[i] <- NA
             } else {
-                iv <- strsplit(jwap_map[[ df$JWAP[i] ]], " to ")[[1]] |> str_remove_all("\\.") |> str_to_upper()
+                iv <- strsplit(jwap_map[[ df$JWAP[i] ]], " to ")[[1]] |> str_remove_all("\\.") |> 
+                    str_to_upper()
                 mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2)
                 df$JWAP[i] <- mid
             }
