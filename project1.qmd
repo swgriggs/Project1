@@ -83,58 +83,70 @@ get_single_year <- function(
     df <- get_pums_tibble(res)
     
     #R1.2.1 - Convert Journey to Work Departure Time to HH:MM Format
-    # parsing JWDP and JWAP is broken
     if ("JWDP" %in% num_vars) {
-        jwdp_file <- paste0("https://api.census.gov/data/", as.character(year), ... = 
+        df <- df |> mutate(JWDP = str_pad(JWDP, width = 3, side = "left", pad = "0"))
+
+        jwdp_file <- paste0("https://api.census.gov/data/", as.character(year),
                                 "/acs/acs1/pums/variables/JWDP.json")
-        jwdp_map <- fromJSON(paste(readLines(jwdp_file), collapse=""))$values$item |> 
-            as.list()
-        for (i in 1:length(df)) {
-            iv <- strsplit(jwdp_map[[df$JWDF[i]]], " to ")[[1]] |> str_remove_all("\\.") 
-            %>% str_to_upper()
-            mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2) 
-            |> hms::as_hms()
-            df$JWDP[i] <- mid
+        jwdp_map <- fromJSON(paste(readLines(jwdp_file), collapse=""))$values$item |> as.list()
+
+        names(jwdp_map)[names(jwdp_map) == "0"] <- "000"
+
+        for (i in 1:nrow(df)) {
+            if (df$JWDP[i] == "000") {
+                df$JWDP[i] <- NA
+            } else {
+                iv <- strsplit(jwdp_map[[ df$JWDP[i] ]], " to ")[[1]] |> str_remove_all("\\.") |> str_to_upper()
+                mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2)
+                df$JWDP[i] <- mid
+            }
         }
+        df <- df |> mutate(JWDP = hms::as_hms(as.numeric(JWDP)))
     }
     
     #R1.2.1 - Convert Journey to Work Arrival Time to HH:MM Format
     if ("JWAP" %in% num_vars) {
-        jwap_file <- paste0("https://api.census.gov/data/", as.character(year), 
+        df <- df |> mutate(JWAP = str_pad(JWAP, width = 3, side = "left", pad = "0"))
+
+        jwap_file <- paste0("https://api.census.gov/data/", as.character(year),
                             "/acs/acs1/pums/variables/JWAP.json")
-        jwap_map <- fromJSON(paste(readLines(jwap_file), collapse=""))$values$item |> 
-            as.list()
-        for (i in 1:length(df)) {
-            iv <- strsplit(jwap_map[[df$JWAP[i]]], " to ")[[1]] |> str_remove_all("\\.") 
-            %>% str_to_upper()
-            mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2) 
-            |> hms::as_hms()
-            df$JWAP[i] <- mid
+        jwap_map <- fromJSON(paste(readLines(jwap_file), collapse=""))$values$item |> as.list()
+
+        names(jwap_map)[names(jwap_map) == "0"] <- "000"
+
+        for (i in 1:nrow(df)) {
+            if (df$JWAP[i] == "000") {
+                df$JWAP[i] <- NA
+            } else {
+                iv <- strsplit(jwap_map[[ df$JWAP[i] ]], " to ")[[1]] |> str_remove_all("\\.") |> str_to_upper()
+                mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2)
+                df$JWAP[i] <- mid
+            }
         }
+        df <- df |> mutate(JWAP = hms::as_hms(as.numeric(JWAP)))
     }
     
     #R1.3 - Validate Categorical Variables
     if (!all(cat_vars %in% c("FER", "HHL", "HISPEED", "JWTRNS", "SCH", "SCHL", "SEX"))) {
         stop("Undefined categorical variable(s)")
     }
-    
+
     #R1.4 - Validate Specified Geography
     if (!all(geography %in% c("All", "Region", "Division", "State"))) {
         stop("Geography must be 'All', 'Region', 'Division' or 'State'")
-    } 
-    
-    
-    
+    }
+
+
+
     #R1.2.1 - Convert Numeric Variables to Numeric
     df_num <- df |> mutate(across(all_of(num_vars), ~ as.numeric(.)))
-    
+
     #R1.3.1 - Convert Categorical Variables into Factors with Levels
     df_cat <- df |> mutate(across(all_of(cat_vars), ~ as.factor(.)))
-    
+
 
     return(list(cat = df_cat, num = df_num))
 }
-
 ```
 
 R1.5 - write a function that allows the user to specify multiple years of survey data (and all the other options above). This function should call your single year function as many times as needed and then combine the data into one final tibble (a year variable should be included in this final tibble).
