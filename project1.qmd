@@ -16,11 +16,10 @@ library("rjson")
 
 ```{r}
 variables <- c("PWGTP","AGEP","SEX", "FER", "JWTRNS")
-region <- "state:01"
+geography <- "state:01"
 year <- "2022"
-
 url <- paste0("https://api.census.gov/data/", year, "/acs/acs1/pums?")
-res <- GET(url, query = list(get=paste(variables, collapse=","), `for`=region))
+res <- GET(url, query = list(get=paste(variables, collapse=","), `for`=geography))
 ```
 
 Write a helper function to take what is returned by GET() and turn it into a nice tibble.
@@ -30,7 +29,7 @@ get_pums_tibble <- function(html_page) {
     content <- content(html_page, as="parsed")
     content <- lapply(content, unlist) |>
                 as.data.frame(col.names=1:length(content)) |>
-                as.matrix() |> t() |> as_tibble() #why a matrix first?
+                as.matrix() |> t() |> as_tibble()
     content <- content |> setNames(content[1,]) |> slice(-1)
     return(content)
 }
@@ -55,10 +54,9 @@ R1.4 – Specify the geography level: All, Region, Division, or State (with the 
 R1.4.1 – An optional argument to subset the data (this subsetting should be on the API call itself, not on what is returned - see the examples in the links above). The user should be able to specify specific Regions, Divisions, or States for this part (and only those specified geography levels would be returned) ∗ How you allow them to specify this is up to you (you’ll have to parse it appropriately).
 
 ```{r Single Year Function}
-
 get_single_year <- function(
         year = 2022, num_vars = c("AGEP", "PWGTP"), 
-        cat_vars = c("SEX"), geography = "All", geography_level = NULL)
+        cat_vars = c("SEX"), geography = "All", geography_level = c(":*"))
     {
     # R1.1- Validate Survey Year
     if (!is.numeric(year)) {
@@ -70,19 +68,38 @@ get_single_year <- function(
     # R1.2 - Validate Numeric Variables
     if (!("PWGTP" %in% num_vars)) {
         stop("PWGTP must be included in the numeric variables")
-    } else if (!all(num_vars %in% c("AGEP","GASP","GRPIP","JWAP","JWDP","JWMNP","PWGTP"))) {
+    }
+    if (length(num_vars) < 2) {
+        stop("At least one numeric variable besides PWGTP is required")
+    }
+    if (!all(num_vars %in% c("AGEP","GASP","GRPIP","JWAP","JWDP","JWMNP","PWGTP"))) {
         stop("Undefined numeric variable(s)")
     }
+    # R1.3 Validate Categorical Variables
+    if (length(cat_vars) == 0) {
+        stop("At least one categorical variable required")
+    }
+    if (!all(cat_vars %in% c("FER", "HHL", "HISPEED", "JWTRNS", "SCH", "SCHL", "SEX"))) {
+        stop("Undefined categorical variable(s)")
+    }
+    # Validate Region Variable
+    if (!(geography %in% c("All", "Region", "Division", "State"))) {
+        stop("Geography must be 'All', 'Region', 'Division' or 'State'")
+    }
+    # #R1.4 - Validate Specified Geography
+    if (geography == "All") { 
+        geography <- ""
+    } else if (geography_level[1] == ":*") {
+        geography <- paste0(geography, geography_level)
+    } else {
+        geography <- paste0(geography, ":", paste(geography_level, collapse = ","))
+    }
     
-    #region <- "state:01"
-    url <- paste0("https://api.census.gov/data/",
-                  as.character(year),
-                  "/acs/acs1/pums?")
-    
-    res <- GET(url, query = list(get=paste(num_vars, collapse=","), `for`= paste0(geography,":", 
-                                                                                  geography_level)))
+    url <- paste0("https://api.census.gov/data/", as.character(year), "/acs/acs1/pums?")
+    res <- GET(url, query = list(get=paste(c(num_vars, cat_vars), collapse=","),
+                                 `for`=geography))
     df <- get_pums_tibble(res)
-    
+
     #R1.2.1 - Convert Journey to Work Departure Time to HH:MM Format
     if ("JWDP" %in% num_vars) {
         df <- df |> mutate(JWDP = str_pad(JWDP, width = 3, side = "left", pad = "0"))
@@ -104,6 +121,7 @@ get_single_year <- function(
             }
         }
         df <- df |> mutate(JWDP = hms::as_hms(as.numeric(JWDP)))
+        num_vars <- num_vars[num_vars != "JWDP"]
     }
     
     #R1.2.1 - Convert Journey to Work Arrival Time to HH:MM Format
@@ -127,29 +145,29 @@ get_single_year <- function(
             }
         }
         df <- df |> mutate(JWAP = hms::as_hms(as.numeric(JWAP)))
+        num_vars <- num_vars[num_vars != "JWAP"]
     }
     
-    #R1.3 - Validate Categorical Variables
-    if (!all(cat_vars %in% c("FER", "HHL", "HISPEED", "JWTRNS", "SCH", "SCHL", "SEX"))) {
-        stop("Undefined categorical variable(s)")
-    }
-
-    #R1.4 - Validate Specified Geography
-    if (!all(geography %in% c("All", "Region", "Division", "State"))) {
-        stop("Geography must be 'All', 'Region', 'Division' or 'State'")
-    }
-
-
-
-    #R1.2.1 - Convert Numeric Variables to Numeric
-    df_num <- df |> mutate(across(all_of(num_vars), ~ as.numeric(.)))
-
     #R1.3.1 - Convert Categorical Variables into Factors with Levels
-    df_cat <- df |> mutate(across(all_of(cat_vars), ~ as.factor(.)))
-
-
-    return(list(cat = df_cat, num = df_num))
+    cat_var_maps <- list()
+    for (variable in cat_vars) {
+        var_url <- paste0("https://api.census.gov/data/", year, "/acs/acs1/pums/variables/", variable, ".json")
+        var_map <- fromJSON(paste(readLines(var_url), collapse=""))$values$item
+        # Handle factor codes with leading zeros not present in actual data
+        names(var_map) <- str_replace(names(var_map), "^0+(?!$)", "")
+        
+        df[[variable]] <- factor(df[[variable]], levels = names(var_map), labels = unlist(unname(var_map)))
+    }
+    
+    #R1.2.1 - Convert Numeric Variables to Numeric
+    df <- df |> mutate(across(all_of(num_vars), ~ as.numeric(.)))
+    
+    return(df)
 }
+
+test <- get_single_year(num_vars = c("PWGTP","AGEP", "JWDP"),
+                       cat_vars = c("SEX", "JWTRNS"),
+                       geography = "State", geography_level = c("02"))
 ```
 
 R1.5 - write a function that allows the user to specify multiple years of survey data (and all the other options above). This function should call your single year function as many times as needed and then combine the data into one final tibble (a year variable should be included in this final tibble).
