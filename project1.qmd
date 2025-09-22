@@ -180,12 +180,17 @@ R1.5 - write a function that allows the user to specify multiple years of survey
 
 get_multiple_years <- function(
         years = c(2022), num_vars = c("AGEP", "PWGTP"), 
-        cat_vars = c("SEX"), geography = "All", geography_level = c(":*"))
+        cat_vars = c("SEX"), geography = "State", geography_level = c("13"))
     {
     
-    my_tibble <- as.tibble(lapply(years, function (y) get_single_year(y,num_vars, cat_vars, geography, geography_level))) |> mutate(Year = years)
-        
+       my_tibble <- lapply(years, function (y) get_single_year(y,num_vars, cat_vars, geography, geography_level)) |> bind_rows(.id = "year")
+    
+    
 }
+
+myear_tibble <- return(my_tibble)
+
+get_multiple_years()
 ```
 
 **Obtaining Person Level Records**
@@ -200,7 +205,7 @@ R2.1 Create your own custom object class called census.
 
 ```{r Census Object Class R2.1}
 
-class(my_tibble) <- c("census", class(my_tibble))
+class(myear_tibble) <- c("census", class(myear_tibble))
 
 ```
 This line of code sets the class attribute of the object multi_year_tibble so that it is recognized as both a "census" object and whatever its original class was ("tbl").
@@ -218,14 +223,18 @@ If num_vars = cat_vars = NULL, return a list of tibbles from my_tibble.  If not,
 
 ```{r Summary Function R2.2}
 
-summary.census <- function(my_tibble, num_vars = NULL, cat_vars = NULL)
+summary.census <- function(myear_tibble, num_vars = NULL, cat_vars = NULL)
 {
     #check if num_vars is TRUE
     if (!is.null(num_vars)) 
     {
         
+        myear_tibble |> select(all_of(setdiff(num_vars, "PWGTP")))|>
+            summarize(across(everything(), ~ (sum(num_vars*weight_vector)/sum(weight_vector))(.x, na.rm = TRUE)))
+        
     #compute means of all numeric variables (except PWGTP)
-        sample_means <- sum(num_vars[,-1]*PWGTP)/sum(PWGTP)
+       
+         sample_means <- sum(my_tibble$num_vars[,-1]*PWGTP)/sum(PWGTP)
     
     #compute standard deviation of all numeric variables (except PWGTP)
         sample_std_devs = sqrt(sum(num_vars[,-1]^2*PWGTP)/sum(PWGTP)-sample_means^2)
@@ -250,8 +259,9 @@ summary.census <- function(my_tibble, num_vars = NULL, cat_vars = NULL)
     {
         
     #compute means of all numeric variables (except PWGTP)
+        
         sample_means <- sum(num_vars[,-1]*PWGTP)/sum(PWGTP)
-    
+        
     #compute standard deviation of all numeric variables (except PWGTP)
         sample_std_devs = sqrt(sum(num_vars[,-1]^2*PWGTP)/sum(PWGTP)-sample_means^2)
         
