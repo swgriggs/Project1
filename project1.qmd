@@ -185,10 +185,8 @@ get_multiple_years <- function(
     
        my_tibble <- lapply(years, function (y) get_single_year(y,num_vars, cat_vars, geography, geography_level)) |> bind_rows(.id = "year")
     
-    
+    return(myear_tibble = my_tibble)
 }
-
-myear_tibble <- return(my_tibble)
 
 get_multiple_years()
 ```
