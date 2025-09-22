@@ -51,12 +51,13 @@ R1.3.1 - Your function should turn variables into factors with appropriate level
 
 R1.4 – Specify the geography level: All, Region, Division, or State (with the default of All). Check that the value specified by the user is one of the above values
 
-R1.4.1 – An optional argument to subset the data (this subsetting should be on the API call itself, not on what is returned - see the examples in the links above). The user should be able to specify specific Regions, Divisions, or States for this part (and only those specified geography levels would be returned) ∗ How you allow them to specify this is up to you (you’ll have to parse it appropriately).
+R1.4.1 – An optional argument to subset the data (this subsetting should be on the API call itself, not on what is returned - see the examples in the links above). The user should be able to specify specific Regions, Divisions, or States for this part (and only those specified geography levels would be returned) ∗ How you allow them to specify this is up to you (you’ll have to parse it appropriately).  The requirement is one state or all states (same for other geography hierarchy).
 
 ```{r Single Year Function}
 get_single_year <- function(
         year = 2022, num_vars = c("AGEP", "PWGTP"), 
-        cat_vars = c("SEX"), geography = "All", geography_level = c(":*"))
+        cat_vars = c("SEX"), geography = "State", geography_level = c(":13"))
+    #
     {
     # R1.1- Validate Survey Year
     if (!is.numeric(year)) {
@@ -175,14 +176,14 @@ test <- get_single_year(num_vars = c("PWGTP","AGEP", "JWDP"),
 
 R1.5 - write a function that allows the user to specify multiple years of survey data (and all the other options above). This function should call your single year function as many times as needed and then combine the data into one final tibble (a year variable should be included in this final tibble).
 
-```{r Multi Year Function}
+```{r Multi Year Function R1.5}
 
 get_multiple_years <- function(
         years = c(2022), num_vars = c("AGEP", "PWGTP"), 
         cat_vars = c("SEX"), geography = "All", geography_level = c(":*"))
     {
     
-    multi_year_tibble <- as.tibble(lapply(years, function (y) get_single_year(y,num_vars, cat_vars, geography, geography_level))) |> mutate(Year = years)
+    my_tibble <- as.tibble(lapply(years, function (y) get_single_year(y,num_vars, cat_vars, geography, geography_level))) |> mutate(Year = years)
         
 }
 ```
@@ -197,9 +198,9 @@ We won’t do this, but we could create a new tibble with each row replicated PW
 
 R2.1 Create your own custom object class called census.
 
-```{r Census Object Class}
+```{r Census Object Class R2.1}
 
-class(multi_year_tibble) <- c("census", class(multi_year_tibble))
+class(my_tibble) <- c("census", class(my_tibble))
 
 ```
 This line of code sets the class attribute of the object multi_year_tibble so that it is recognized as both a "census" object and whatever its original class was ("tbl").
@@ -211,11 +212,72 @@ R2.2.1 For the census summary method, let’s write a function that produces mea
 
 R2.2.2 - This function should take three arguments: the tibble with class census, the numeric variable(s) to summarize, the categorical variable(s) to summarize.
 
-R2.2.3 - By default, it should summarize all numeric variables (other than PWGTP) and all categorical variables in the tibble. However, the user should be able to specify the variables they’d like to summarize if they’d like.
+R2.2.3 - By default, it should summarize all numeric variables (other than PWGTP) and all categorical variables in the tibble. However, the user should be able to specify the variables they’d like to summarize if they’d like.  
 
-```{r Summary Function}
+If num_vars = cat_vars = NULL, return a list of tibbles from my_tibble.  If not, then return a list of tibbles based on the arguments in num_vars and cat_vars.  PWGTP is a frequency count. See project prompt. Return the means and standard deviations as a named list.
 
-summary.census <- function(...){...}
+```{r Summary Function R2.2}
+
+summary.census <- function(my_tibble, num_vars = NULL, cat_vars = NULL)
+{
+    #check if num_vars is TRUE
+    if (!is.null(num_vars)) 
+    {
+        
+    #compute means of all numeric variables (except PWGTP)
+        sample_means <- sum(num_vars[,-1]*PWGTP)/sum(PWGTP)
+    
+    #compute standard deviation of all numeric variables (except PWGTP)
+        sample_std_devs = sqrt(sum(num_vars[,-1]^2*PWGTP)/sum(PWGTP)-sample_means^2)
+        
+        num_list <- list(Means = sample_means, St_Dev = sample_std_devs)     
+        summarize(num_list)
+    }
+    
+    #check if cat_vars is TRUE
+    if(!is.null(cat_vars)) 
+    {
+        
+    #summarize frequency counts    
+        my_tibble %>%
+            group_by(cat_vars) %>%
+            summarize(Freq=n())       
+
+    }
+    
+    #default - return list of tibbles from my_tibble
+    if (is.null(num_vars) && is.null(cat_vars)) 
+    {
+        
+    #compute means of all numeric variables (except PWGTP)
+        sample_means <- sum(num_vars[,-1]*PWGTP)/sum(PWGTP)
+    
+    #compute standard deviation of all numeric variables (except PWGTP)
+        sample_std_devs = sqrt(sum(num_vars[,-1]^2*PWGTP)/sum(PWGTP)-sample_means^2)
+        
+        num_list <- list(Means = sample_means, St_Dev = sample_std_devs)     
+        summarize(num_list)   
+        
+    #summarize frequency counts    
+        my_tibble %>%
+            group_by(cat_vars) %>%
+            summarize(Freq=n())   
+        
+    }
+    
+    
+    
+}    
+
+    
+    # #compute means of all numeric variables (except PWGTP)
+    # sum(numeric_vector*weight_vector)/sum(weight_vector)
+    # 
+    # 
+    # sqrt(sum(numeric_vector^2*weight_vector)/sum(weight_vector)-sample_mean^2)
+    # 
+    # #produce a frequency table by group for categorical variables
+    
 
 ```
 
@@ -228,6 +290,11 @@ R2.2.4 Test out this function by running summary(*your_census_tibble*) on someth
 R2.3 - Similarly, let’s create a generic plot() function for a census class tibble. Require the user to specify one categorical variable and one numeric variable for plotting purposes.
 
 ```{r Plotting Function}
+
+library(ggplot2) # put this in your setup code chunk
+ggplot(my_tibble,
+aes(x = get(cat_vars), y = get(num_vars), weight = PWGTP)) +
+ geom_boxplot()
 
 ```
 
