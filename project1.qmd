@@ -54,11 +54,8 @@ R1.4 – Specify the geography level: All, Region, Division, or State (with the 
 R1.4.1 – An optional argument to subset the data (this subsetting should be on the API call itself, not on what is returned - see the examples in the links above). The user should be able to specify specific Regions, Divisions, or States for this part (and only those specified geography levels would be returned) ∗ How you allow them to specify this is up to you (you’ll have to parse it appropriately).  The requirement is one state or all states (same for other geography hierarchy).
 
 ```{r Single Year Function}
-get_single_year <- function(
-        year = 2022, num_vars = c("AGEP", "PWGTP"), 
-        cat_vars = c("SEX"), geography = "State", geography_level = c(":13"))
-    #
-    {
+get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"), 
+                            cat_vars = c("SEX"), geography = "State", geography_level = c(":13")) {
     # R1.1- Validate Survey Year
     if (!is.numeric(year)) {
         stop("Year must be numeric")
@@ -177,18 +174,13 @@ test <- get_single_year(num_vars = c("PWGTP","AGEP", "JWDP"),
 R1.5 - write a function that allows the user to specify multiple years of survey data (and all the other options above). This function should call your single year function as many times as needed and then combine the data into one final tibble (a year variable should be included in this final tibble).
 
 ```{r Multi Year Function R1.5}
-
-get_multiple_years <- function(
-        years = c(2022), num_vars = c("AGEP", "PWGTP"), 
-        cat_vars = c("SEX"), geography = "State", geography_level = c("13"))
-    {
+get_multiple_years <- function(years = c(2022), num_vars = c("AGEP", "PWGTP"),
+                               cat_vars = c("SEX"), geography = "State", geography_level = c("13")) {
     
-       my_tibble <- lapply(years, function (y) get_single_year(y,num_vars, cat_vars, geography, geography_level)) |> bind_rows(.id = "year")
-    
-    return(myear_tibble = my_tibble)
+    my_tibble <- lapply(years, function (y) get_single_year(y,num_vars, cat_vars, geography, geography_level)) |>
+           map2_dfr(years, ~ mutate(.x, year = .y))
+    return(my_tibble)
 }
-
-get_multiple_years()
 ```
 
 **Obtaining Person Level Records**
@@ -220,73 +212,48 @@ R2.2.3 - By default, it should summarize all numeric variables (other than PWGTP
 If num_vars = cat_vars = NULL, return a list of tibbles from my_tibble.  If not, then return a list of tibbles based on the arguments in num_vars and cat_vars.  PWGTP is a frequency count. See project prompt. Return the means and standard deviations as a named list.
 
 ```{r Summary Function R2.2}
-
-summary.census <- function(myear_tibble, num_vars = NULL, cat_vars = NULL)
-{
+summary.census <- function(myear_tibble, num_vars = NULL, cat_vars = NULL) {
     #check if num_vars is TRUE
-    if (!is.null(num_vars)) 
-    {
-        
-        myear_tibble |> select(all_of(setdiff(num_vars, "PWGTP")))|>
-            summarize(across(everything(), ~ (sum(num_vars*weight_vector)/sum(weight_vector))(.x, na.rm = TRUE)))
-        
-    #compute means of all numeric variables (except PWGTP)
-       
-         sample_means <- sum(my_tibble$num_vars[,-1]*PWGTP)/sum(PWGTP)
+    mean_tibble <- sd_tibble <- freq_tibble <- NULL
     
-    #compute standard deviation of all numeric variables (except PWGTP)
-        sample_std_devs = sqrt(sum(num_vars[,-1]^2*PWGTP)/sum(PWGTP)-sample_means^2)
-        
-        num_list <- list(Means = sample_means, St_Dev = sample_std_devs)     
-        summarize(num_list)
+    if (!is.null(num_vars)) {
+        # compute means of all numeric variables (except PWGTP)
+        # sample_means <- sum(my_tibble$num_vars[,-1]*PWGTP)/sum(PWGTP)
+        mean_tibble <- myear_tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
+                                         ~ sum(.x * PWGTP) / sum(PWGTP), .names = "{.col}_mean"))
+        #compute standard deviation of all numeric variables (except PWGTP)
+        #sample_std_devs = sqrt(sum(num_vars[,-1]^2*PWGTP)/sum(PWGTP)-sample_means^2)
+        sd_tibble <- myear_tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
+                        ~ sqrt( sum(.x^2 * PWGTP) / sum(PWGTP) - mean(.x)^2 ), .names = "{.col}_sd"))
     }
     
     #check if cat_vars is TRUE
-    if(!is.null(cat_vars)) 
-    {
-        
+    if(!is.null(cat_vars)) {
     #summarize frequency counts    
-        my_tibble %>%
-            group_by(cat_vars) %>%
-            summarize(Freq=n())       
-
+        freq_tibble <- myear_tibble |> group_by(across(all_of(cat_vars))) |> summarize(Freq=n())       
     }
     
     #default - return list of tibbles from my_tibble
-    if (is.null(num_vars) && is.null(cat_vars)) 
-    {
+    if (is.null(num_vars) && is.null(cat_vars)) {
+        #compute means of all numeric variables (except PWGTP)
+        mean_tibble <- myear_tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
+                                             ~ sum(.x * PWGTP) / sum(PWGTP), .names = "{.col}"))
+            
+        #compute standard deviation of all numeric variables (except PWGTP)
+        sd_tibble <- myear_tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
+                            ~ sqrt( sum(.x^2 * PWGTP) / sum(PWGTP) - mean(.x)^2 ), .names = "{.col}")) 
         
-    #compute means of all numeric variables (except PWGTP)
-        
-        sample_means <- sum(num_vars[,-1]*PWGTP)/sum(PWGTP)
-        
-    #compute standard deviation of all numeric variables (except PWGTP)
-        sample_std_devs = sqrt(sum(num_vars[,-1]^2*PWGTP)/sum(PWGTP)-sample_means^2)
-        
-        num_list <- list(Means = sample_means, St_Dev = sample_std_devs)     
-        summarize(num_list)   
-        
-    #summarize frequency counts    
-        my_tibble %>%
-            group_by(cat_vars) %>%
-            summarize(Freq=n())   
-        
+        #summarize frequency counts    
+        freq_tibble <- myear_tibble |> select(where(is.factor)) |> count(across(everything()), name = "Freq")
     }
-    
-    
-    
-}    
-
-    
-    # #compute means of all numeric variables (except PWGTP)
-    # sum(numeric_vector*weight_vector)/sum(weight_vector)
-    # 
-    # 
-    # sqrt(sum(numeric_vector^2*weight_vector)/sum(weight_vector)-sample_mean^2)
-    # 
-    # #produce a frequency table by group for categorical variables
-    
-
+    return(c(
+        bind_rows(mean_tibble, sd_tibble) |>
+            mutate(stat = c("Mean", "Standard Deviation")) |>
+            select(stat, everything()),
+        freq_tibble)
+        )
+}
+summary.census(test)
 ```
 
 R2.2.4 Test out this function by running summary(*your_census_tibble*) on something you’ve returned from your census API function.
