@@ -26,12 +26,12 @@ Write a helper function to take what is returned by GET() and turn it into a nic
 
 ```{r}
 get_pums_tibble <- function(html_page) {
-    content <- content(html_page, as="parsed")
-    content <- lapply(content, unlist) |>
-                as.data.frame(col.names=1:length(content)) |>
-                as.matrix() |> t() |> as_tibble()
-    content <- content |> setNames(content[1,]) |> slice(-1)
-    return(content)
+    content <- content(html_page, as="parsed") #Parses the HTML content.
+    content <- lapply(content, unlist) |> #Unlists each element in the parsed content. This creates a list of vectors.
+                as.data.frame(col.names=1:length(content)) |> #Converts the list to a data frame, with column names as numbers.
+                as.matrix() |> t() |> as_tibble() #Converts the data frame to a matrix, transposes it, and then converts it to a tibble.
+    content <- content |> setNames(content[1,]) |> slice(-1) #Sets the first row as column names.   Then removes the first row (now used as column names)
+    return(content) #returns a tibble.
 }
 ```
 
@@ -51,7 +51,7 @@ R1.3.1 - Your function should turn variables into factors with appropriate level
 
 R1.4 – Specify the geography level: All, Region, Division, or State (with the default of All). Check that the value specified by the user is one of the above values
 
-R1.4.1 – An optional argument to subset the data (this subsetting should be on the API call itself, not on what is returned - see the examples in the links above). The user should be able to specify specific Regions, Divisions, or States for this part (and only those specified geography levels would be returned) ∗ How you allow them to specify this is up to you (you’ll have to parse it appropriately).  The requirement is one state or all states (same for other geography hierarchy).
+R1.4.1 – An optional argument to subset the data (this subsetting should be on the API call itself, not on what is returned - see the examples in the links above). The user should be able to specify specific Regions, Divisions, or States for this part (and only those specified geography levels would be returned) ∗ How you allow them to specify this is up to you (you’ll have to parse it appropriately). The requirement is one state or all states (same for other geography hierarchy).
 
 ```{r Single Year Function}
 get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"), 
@@ -83,17 +83,36 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
         stop("Undefined categorical variable(s)")
     }
     # Validate Region Variable
-    if (!(geography %in% c("All", "Region", "Division", "State"))) {
-        stop("Geography must be 'All', 'Region', 'Division' or 'State'")
+    if (!(geography %in% c("State", "Division", "Region"))) {
+        stop("Geography must be 'Region', 'Division' or 'State'")
     }
-    # #R1.4 - Validate Specified Geography
-    if (geography == "All") { 
-        geography <- ""
-    } else if (geography_level[1] == ":*") {
-        geography <- paste0(geography, geography_level)
-    } else {
-        geography <- paste0(geography, ":", paste(geography_level, collapse = ","))
+    # # #R1.4A - Validate Specified Geography (This code is no longer needed)
+    # if (geography == "All") { 
+    #     geography <- ""
+    # } else if (geography_level[1] == ":*") {
+    #     geography <- paste0(geography, geography_level)
+    # } else {
+    #     geography <- paste0(geography, ":", paste(geography_level, collapse = ","))
+    # }
+    
+    # #R1.4B - Validate Specified Geography Level
+    if (geography == "State" && grepl(c(paste0("0", 1:9), as.character(c(10:50))),geography_level) == TRUE){
+    geography <- "State:"}
+    else {stop("Valid State values are between 01 and 50")
     }
+
+    if (geography == "Division" && grepl(as.character(c(0:9)),geography_level) == TRUE){
+    geography <- "Division:"}
+    else {stop("Valid Division values are between 0 and 9")
+    }
+
+    if (geography == "Region" && grepl(as.character(c(1,2,3,4,9)),geography_level) == TRUE){
+    geography <- "Region:"}
+    else {stop("Valid Region values are 1,2,3,4,9")
+    }
+    
+    #geography <- paste0(geography, paste(geography_level, collapse = ","))
+    
     
     url <- paste0("https://api.census.gov/data/", as.character(year), 
                   "/acs/acs1/pums?")
@@ -102,32 +121,59 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
     df <- get_pums_tibble(res)
 
     #R1.2.1 - Convert Journey to Work Departure Time to HH:MM Format
-    if ("JWDP" %in% num_vars) {
-        df <- df |> mutate(JWDP = str_pad(JWDP, width = 3, side = "left", pad = "0"))
+    if ("JWDP" %in% num_vars && "JWDP" %in% names(df)) {
+    df <- df |> mutate(JWDP = str_pad(JWDP, width = 3, side = "left", pad = "0"))
+        #Checks if "JWDP" is one of the variables in num_vars. If not, the block is skipped. 
+        #Pads the JWDP column in df with leading zeros so all values are 3 characters wide (e.g., "7" becomes "007").
 
         jwdp_file <- paste0("https://api.census.gov/data/", as.character(year),
                                 "/acs/acs1/pums/variables/JWDP.json")
+        #Creates the URL to download the JWDP code mapping for the specified year.
+        
         jwdp_map <- fromJSON(paste(readLines(jwdp_file), collapse=""))$values$item |> as.list()
+        #Downloads and reads the JSON file, extracts the mapping of JWDP codes to time ranges, and converts it to a list.
 
         names(jwdp_map)[names(jwdp_map) == "0"] <- "000"
+        #Renames the mapping key "0" to "000" to match the padded JWDP codes. This line subsets the names of the keys that are 0 and then converting them to "000"
 
         for (i in 1:nrow(df)) {
+            #Starts a loop over each row in the data frame.
             if (df$JWDP[i] == "000") {
                 df$JWDP[i] <- NA
+            #If the JWDP code is "000" (which means "Not applicable"), sets it to NA.
             } else {
                 iv <- strsplit(jwdp_map[[ df$JWDP[i] ]], " to ")[[1]] |> str_remove_all("\\.") |> 
                     str_to_upper()
+                #Otherwise, splits the mapped time range (e.g., "5:00 a.m. to 5:29 a.m.") into start and end times, 
+                #removes periods, and converts to uppercase.
+                
+                #jwdp_map[[ df$JWDP[i] ]]: Looks up the value in jwdp_map using the JWDP code from row i of df. 
+                #This value is a string like "5:00 a.m. to 5:29 a.m.". 
+                #strsplit(..., " to "): Splits that string into two parts at " to ", resulting in a vector like c("5:00 a.m.", "5:29 a.m.").
+                #[[1]]: Extracts the first (and only) element of the list returned by strsplit, producing a character vector.
+                #str_remove_all("\\."): Removes all periods from both start and end time strings, so "5:00 a.m." becomes "5:00 am".
+                #str_to_upper(): Converts both strings to uppercase, so "5:00 am" becomes "5:00 AM".
+                
+
                 mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2)
+                #Parses the start and end times, converts them to numeric (seconds or minutes), and calculates the midpoint.
                 df$JWDP[i] <- mid
+                #Assigns the midpoint value back to the JWDP column for that row.
             }
         }
         df <- df |> mutate(JWDP = hms::as_hms(as.numeric(JWDP)))
+        #After the loop, converts the JWDP column to HMS (hour-minute-second) time format.
+        #as.numeric(JWDP): Converts the JWDP column to numeric values (if it isn’t already).
+        #hms::as_hms(...): Converts those numeric values to time objects in the HMS (hours:minutes:seconds) format.
+        #mutate(JWDP = ...): Updates the JWDP column in the data frame df with these new time values.
+        
         num_vars <- num_vars[num_vars != "JWDP"]
+        # Removes "JWDP" from the num_vars vector, since it is no longer a numeric variable.
     }
     
     #R1.2.1 - Convert Journey to Work Arrival Time to HH:MM Format
-    if ("JWAP" %in% num_vars) {
-        df <- df |> mutate(JWAP = str_pad(JWAP, width = 3, side = "left", pad = "0"))
+    if ("JWAP" %in% num_vars && "JWAP" %in% names(df)) {
+    df <- df |> mutate(JWAP = str_pad(JWAP, width = 3, side = "left", pad = "0"))
 
         jwap_file <- paste0("https://api.census.gov/data/", as.character(year),
                             "/acs/acs1/pums/variables/JWAP.json")
@@ -150,15 +196,23 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
     }
     
     #R1.3.1 - Convert Categorical Variables into Factors with Levels
-    cat_var_maps <- list()
+#    cat_var_maps <- list()
     for (variable in cat_vars) {
+        #Iterates through each variable name in the vector cat_vars.
         var_url <- paste0("https://api.census.gov/data/", year, "/acs/acs1/pums/variables/", variable, ".json")
+        #Constructs the URL to download the JSON codebook for the current variable and year.
         var_map <- fromJSON(paste(readLines(var_url), collapse=""))$values$item
-        # Handle factor codes with leading zeros not present in actual data
+        #Downloads the JSON file, reads it as a single string, parses it, and extracts the mapping of codes to labels for the variable.
         names(var_map) <- str_replace(names(var_map), "^0+(?!$)", "")
+        #Removes leading zeros from the code names (except for the value "0"), so that codes in the data (which may not have leading zeros) will match the codebook.
+        #names(var_map): Gets the vector of code names (e.g., "01", "02", "0", "10").
+        #str_replace(names(var_map), "^0+(?!$)", ""): Uses a regular expression to remove one or more zeros at the start of each name, but not if the name is just "0". The result: "01" becomes "1", "002" becomes "2", but "0" stays "0".
         
         df[[variable]] <- factor(df[[variable]], levels = names(var_map), labels = unlist(unname(var_map)))
+        #Converts the column df[[variable]] (for each cat_var) into a factor:in the data frame to a factor, using the cleaned code names as levels and the corresponding labels from the codebook as the factor labels.
     }
+ 
+    
     
     #R1.2.1 - Convert Numeric Variables to Numeric
     df <- df |> mutate(across(all_of(num_vars), ~ as.numeric(.)))
@@ -166,21 +220,29 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
     return(df)
 }
 
-test <- get_single_year(num_vars = c("PWGTP","AGEP", "JWDP"),
-                       cat_vars = c("SEX", "JWTRNS"),
-                       geography = "State", geography_level = c("02"))
+
 ```
 
 R1.5 - write a function that allows the user to specify multiple years of survey data (and all the other options above). This function should call your single year function as many times as needed and then combine the data into one final tibble (a year variable should be included in this final tibble).
 
 ```{r Multi Year Function R1.5}
-get_multiple_years <- function(years = c(2022), num_vars = c("AGEP", "PWGTP"),
-                               cat_vars = c("SEX"), geography = "State", geography_level = c("13")) {
-    
-    my_tibble <- lapply(years, function (y) get_single_year(y,num_vars, cat_vars, geography, geography_level)) |>
-           map2_dfr(years, ~ mutate(.x, year = .y))
-    return(my_tibble)
+get_multi_years <- function(years = c(2022), num_vars = c("AGEP", "PWGTP"),
+                            cat_vars = c("SEX"), geography = "State", geography_level = c("13")) {
+  myear_tibble <- lapply(years, function(y) 
+    get_single_year(y, num_vars, cat_vars, geography, geography_level)
+  ) |> 
+    map2_dfr(years, ~ mutate(.x, year = .y))
+  return(myear_tibble)
 }
+    
+    #lapply(years, function (y) get_single_year(...)): For each year in years, calls the function get_single_year() with the specified parameters, returning a list of tibbles (one per year). The result is a list: each element is a tibble for a specific year. The pipe |> passes this list to map2_dfr(years, ~ mutate(.x, year = .y)):
+    
+    #map2_dfr() iterates over the list of tibbles and the years vector in parallel.
+    #mutate(.x, year = .y) is used inside map2_dfr() to add a new column called year to each tibble .x, setting its value to .y (the corresponding year). .x is the current tibble (data for one year). .y is the current year from the years vector.y. #map2_dfr() then binds all the tibbles together row-wise into a single tibble.
+
+
+
+
 ```
 
 **Obtaining Person Level Records**
@@ -198,8 +260,8 @@ R2.1 Create your own custom object class called census.
 class(myear_tibble) <- c("census", class(myear_tibble))
 
 ```
-This line of code sets the class attribute of the object multi_year_tibble so that it is recognized as both a "census" object and whatever its original class was ("tbl").
 
+This line of code sets the class attribute of the object multi_year_tibble so that it is recognized as both a "census" object and whatever its original class was ("tbl").
 
 R2.2 Create your own summary function that produces summary statistics on the census object.
 
@@ -207,58 +269,86 @@ R2.2.1 For the census summary method, let’s write a function that produces mea
 
 R2.2.2 - This function should take three arguments: the tibble with class census, the numeric variable(s) to summarize, the categorical variable(s) to summarize.
 
-R2.2.3 - By default, it should summarize all numeric variables (other than PWGTP) and all categorical variables in the tibble. However, the user should be able to specify the variables they’d like to summarize if they’d like.  
+R2.2.3 - By default, it should summarize all numeric variables (other than PWGTP) and all categorical variables in the tibble. However, the user should be able to specify the variables they’d like to summarize if they’d like.
 
-If num_vars = cat_vars = NULL, return a list of tibbles from my_tibble.  If not, then return a list of tibbles based on the arguments in num_vars and cat_vars.  PWGTP is a frequency count. See project prompt. Return the means and standard deviations as a named list.
+If num_vars = cat_vars = NULL, return a list of tibbles from my_tibble. If not, then return a list of tibbles based on the arguments in num_vars and cat_vars. PWGTP is a frequency count. See project prompt. Return the means and standard deviations as a named list.
 
 ```{r Summary Function R2.2}
-summary.census <- function(myear_tibble, num_vars = NULL, cat_vars = NULL) {
+summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
     #check if num_vars is TRUE
     mean_tibble <- sd_tibble <- freq_tibble <- NULL
     
     if (!is.null(num_vars)) {
-        # compute means of all numeric variables (except PWGTP)
-        # sample_means <- sum(my_tibble$num_vars[,-1]*PWGTP)/sum(PWGTP)
-        mean_tibble <- myear_tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
+        mean_tibble <- tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
                                          ~ sum(.x * PWGTP) / sum(PWGTP), .names = "{.col}_mean"))
-        #compute standard deviation of all numeric variables (except PWGTP)
-        #sample_std_devs = sqrt(sum(num_vars[,-1]^2*PWGTP)/sum(PWGTP)-sample_means^2)
-        sd_tibble <- myear_tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
-                        ~ sqrt( sum(.x^2 * PWGTP) / sum(PWGTP) - mean(.x)^2 ), .names = "{.col}_sd"))
+        #myear_tibble |> ...: Pipes the data frame into the next operation.
+        #summarise(...): Collapses the data frame to a single row with summary statistics.
+        #across(all_of(num_vars) & !all_of("PWGTP"), ...): Applies the function to all columns in num_vars except "PWGTP".
+        #For each column, create a new column in the output with the name given by .names = "{.col}_mean" (e.g., AGEP_mean).
+        #~ sum(.x * PWGTP) / sum(PWGTP): Calculates the weighted mean for each variable, using PWGTP as the weight.
+        #.names = "{.col}_mean": Names the new columns as the original column name plus _mean.
+       
+        sd_tibble <- tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
+                        ~ sqrt(sum(.x^2 * PWGTP) / sum(PWGTP) - mean(.x)^2 ), .names = "{.col}_sd"))
     }
+        #myear_tibble |> Pipes the data frame into the next operation.
+        #summarise(...): Collapses the data frame to a single row with summary statistics.
+        #across(all_of(num_vars) & !all_of("PWGTP"), ...): Applies the function to all columns in num_vars except "PWGTP". 
+        #For each column, create a new column in the output with the name given by .names = "{.col}_sd" (e.g., AGEP_sd).
+        #sqrt(sum(.x^2 * PWGTP) / (sum(PWGTP) - mean(.x)^2 )): 
+        #Calculates the weighted standard deviation for each variable, using PWGTP as the weight.
+        #.names = "{.col}_sd": Names the new columns as the original column name plus _sd.
+    
     
     #check if cat_vars is TRUE
     if(!is.null(cat_vars)) {
     #summarize frequency counts    
-        freq_tibble <- myear_tibble |> group_by(across(all_of(cat_vars))) |> summarize(Freq=n())       
+        freq_tibble <- tibble |> group_by(across(all_of(cat_vars))) |> summarize(Freq=n())       #Checks if cat_vars is not NULL.
+    # Groups myear_tibble by all columns in cat_vars.
+    #Summarizes the frequency (count) of each group.
+
     }
     
     #default - return list of tibbles from my_tibble
     if (is.null(num_vars) && is.null(cat_vars)) {
         #compute means of all numeric variables (except PWGTP)
-        mean_tibble <- myear_tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
+        mean_tibble <- tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
                                              ~ sum(.x * PWGTP) / sum(PWGTP), .names = "{.col}"))
             
         #compute standard deviation of all numeric variables (except PWGTP)
-        sd_tibble <- myear_tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
+        sd_tibble <- tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
                             ~ sqrt( sum(.x^2 * PWGTP) / sum(PWGTP) - mean(.x)^2 ), .names = "{.col}")) 
         
         #summarize frequency counts    
-        freq_tibble <- myear_tibble |> select(where(is.factor)) |> count(across(everything()), name = "Freq")
+        freq_tibble <- tibble |> select(where(is.factor)) |> count(across(everything()), name = "Freq")
     }
     return(c(
         bind_rows(mean_tibble, sd_tibble) |>
+        #Stacks the mean and standard deviation tibbles row-wise.
             mutate(stat = c("Mean", "Standard Deviation")) |>
+            #Adds a stat column labeling each row.
             select(stat, everything()),
+            #Moves the stat column to the front.
         freq_tibble)
+        #c(..., freq_tibble): Combines the summary tibble and the frequency tibble into a list.
         )
 }
-summary.census(test)
+
 ```
 
 R2.2.4 Test out this function by running summary(*your_census_tibble*) on something you’ve returned from your census API function.
 
 ```{r Summary Function Verification}
+syear_test <- get_single_year(num_vars = c("PWGTP","AGEP", "JWDP"),
+                       cat_vars = c("SEX", "JWTRNS"),
+                       geography = "State", geography_level = c("02"))
+
+myear_test <- get_multi_years(years = c(2019, 2022), num_vars = c("PWGTP","AGEP", "JWDP"),
+                       cat_vars = c("SEX", "JWTRNS"),
+                       geography = "State", geography_level = c("02"))
+
+summary.census(syear_test)
+
 
 ```
 
