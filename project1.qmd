@@ -83,37 +83,33 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
         stop("Undefined categorical variable(s)")
     }
     # Validate Region Variable
+    
     if (!(geography %in% c("State", "Division", "Region"))) {
         stop("Geography must be 'Region', 'Division' or 'State'")
     }
-    # # #R1.4A - Validate Specified Geography (This code is no longer needed)
-    # if (geography == "All") { 
-    #     geography <- ""
-    # } else if (geography_level[1] == ":*") {
-    #     geography <- paste0(geography, geography_level)
-    # } else {
-    #     geography <- paste0(geography, ":", paste(geography_level, collapse = ","))
-    # }
-    
-    # #R1.4B - Validate Specified Geography Level
-    if (geography == "State" && grepl(c(paste0("0", 1:9), as.character(c(10:50))),geography_level) == TRUE){
-    geography <- "State:"}
-    else {stop("Valid State values are between 01 and 50")
-    }
+   
+     #R1.4 - Validate Geography Level
+    #State Check
+    if (geography == "State" && as.numeric(geography_level) %in% 0:50)
+       {geography <- "State"
 
-    if (geography == "Division" && grepl(as.character(c(0:9)),geography_level) == TRUE){
-    geography <- "Division:"}
-    else {stop("Valid Division values are between 0 and 9")
-    }
+    #Division Check
+    } else if (geography == "Division" && as.numeric(geography_level) %in% 0:9)
+        
+    {geography <- "Division"
 
-    if (geography == "Region" && grepl(as.character(c(1,2,3,4,9)),geography_level) == TRUE){
-    geography <- "Region:"}
-    else {stop("Valid Region values are 1,2,3,4,9")
-    }
+    #Region Check
+    } else if (geography == "Region" && as.numeric(geography_level) %in% c(1,2,3,4,9))
+    {geography <- "Region"
+
+    } else
+    stop("Valid State values are between 01 and 50\n Valid Division values are between 0 and 9\n Valid Region values are 1,2,3,4,9")
+
     
-    #geography <- paste0(geography, paste(geography_level, collapse = ","))
-    
-    
+    #Create geography argument
+    geography <- paste0(geography, ":", paste(geography_level, collapse = ","))
+     
+     
     url <- paste0("https://api.census.gov/data/", as.character(year), 
                   "/acs/acs1/pums?")
     res <- GET(url, query = list(get=paste(c(num_vars, cat_vars), 
@@ -123,8 +119,6 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
     #R1.2.1 - Convert Journey to Work Departure Time to HH:MM Format
     if ("JWDP" %in% num_vars && "JWDP" %in% names(df)) {
     df <- df |> mutate(JWDP = str_pad(JWDP, width = 3, side = "left", pad = "0"))
-        #Checks if "JWDP" is one of the variables in num_vars. If not, the block is skipped. 
-        #Pads the JWDP column in df with leading zeros so all values are 3 characters wide (e.g., "7" becomes "007").
 
         jwdp_file <- paste0("https://api.census.gov/data/", as.character(year),
                                 "/acs/acs1/pums/variables/JWDP.json")
@@ -144,17 +138,9 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
             } else {
                 iv <- strsplit(jwdp_map[[ df$JWDP[i] ]], " to ")[[1]] |> str_remove_all("\\.") |> 
                     str_to_upper()
-                #Otherwise, splits the mapped time range (e.g., "5:00 a.m. to 5:29 a.m.") into start and end times, 
+                #Otherwise, splits the mapped time range (e.g., "5:00 a.m. to 5:29 a.m.") into start and end times,
                 #removes periods, and converts to uppercase.
                 
-                #jwdp_map[[ df$JWDP[i] ]]: Looks up the value in jwdp_map using the JWDP code from row i of df. 
-                #This value is a string like "5:00 a.m. to 5:29 a.m.". 
-                #strsplit(..., " to "): Splits that string into two parts at " to ", resulting in a vector like c("5:00 a.m.", "5:29 a.m.").
-                #[[1]]: Extracts the first (and only) element of the list returned by strsplit, producing a character vector.
-                #str_remove_all("\\."): Removes all periods from both start and end time strings, so "5:00 a.m." becomes "5:00 am".
-                #str_to_upper(): Converts both strings to uppercase, so "5:00 am" becomes "5:00 AM".
-                
-
                 mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2)
                 #Parses the start and end times, converts them to numeric (seconds or minutes), and calculates the midpoint.
                 df$JWDP[i] <- mid
@@ -162,10 +148,9 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
             }
         }
         df <- df |> mutate(JWDP = hms::as_hms(as.numeric(JWDP)))
-        #After the loop, converts the JWDP column to HMS (hour-minute-second) time format.
-        #as.numeric(JWDP): Converts the JWDP column to numeric values (if it isn’t already).
-        #hms::as_hms(...): Converts those numeric values to time objects in the HMS (hours:minutes:seconds) format.
-        #mutate(JWDP = ...): Updates the JWDP column in the data frame df with these new time values.
+        #Converts the JWDP column to HMS (hour-minute-second) time format.
+        #Converts the JWDP column to numeric values (if it isn’t already).
+  
         
         num_vars <- num_vars[num_vars != "JWDP"]
         # Removes "JWDP" from the num_vars vector, since it is no longer a numeric variable.
@@ -204,16 +189,12 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
         var_map <- fromJSON(paste(readLines(var_url), collapse=""))$values$item
         #Downloads the JSON file, reads it as a single string, parses it, and extracts the mapping of codes to labels for the variable.
         names(var_map) <- str_replace(names(var_map), "^0+(?!$)", "")
-        #Removes leading zeros from the code names (except for the value "0"), so that codes in the data (which may not have leading zeros) will match the codebook.
-        #names(var_map): Gets the vector of code names (e.g., "01", "02", "0", "10").
-        #str_replace(names(var_map), "^0+(?!$)", ""): Uses a regular expression to remove one or more zeros at the start of each name, but not if the name is just "0". The result: "01" becomes "1", "002" becomes "2", but "0" stays "0".
+        #Removes leading zeros from the code names (except for the value "0"), so that codes in the data (which may not have leading zeros) will match the codebook. 
         
         df[[variable]] <- factor(df[[variable]], levels = names(var_map), labels = unlist(unname(var_map)))
         #Converts the column df[[variable]] (for each cat_var) into a factor:in the data frame to a factor, using the cleaned code names as levels and the corresponding labels from the codebook as the factor labels.
     }
  
-    
-    
     #R1.2.1 - Convert Numeric Variables to Numeric
     df <- df |> mutate(across(all_of(num_vars), ~ as.numeric(.)))
     
@@ -281,31 +262,15 @@ summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
     if (!is.null(num_vars)) {
         mean_tibble <- tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
                                          ~ sum(.x * PWGTP) / sum(PWGTP), .names = "{.col}_mean"))
-        #myear_tibble |> ...: Pipes the data frame into the next operation.
-        #summarise(...): Collapses the data frame to a single row with summary statistics.
-        #across(all_of(num_vars) & !all_of("PWGTP"), ...): Applies the function to all columns in num_vars except "PWGTP".
-        #For each column, create a new column in the output with the name given by .names = "{.col}_mean" (e.g., AGEP_mean).
-        #~ sum(.x * PWGTP) / sum(PWGTP): Calculates the weighted mean for each variable, using PWGTP as the weight.
-        #.names = "{.col}_mean": Names the new columns as the original column name plus _mean.
-       
+        
         sd_tibble <- tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
-                        ~ sqrt(sum(.x^2 * PWGTP) / sum(PWGTP) - mean(.x)^2 ), .names = "{.col}_sd"))
+                        ~ sqrt(sum(.x^2 * PWGTP) / sum(PWGTP) - (sum(.x * PWGTP) / sum(PWGTP))^2 ), .names = "{.col}_sd"))
     }
-        #myear_tibble |> Pipes the data frame into the next operation.
-        #summarise(...): Collapses the data frame to a single row with summary statistics.
-        #across(all_of(num_vars) & !all_of("PWGTP"), ...): Applies the function to all columns in num_vars except "PWGTP". 
-        #For each column, create a new column in the output with the name given by .names = "{.col}_sd" (e.g., AGEP_sd).
-        #sqrt(sum(.x^2 * PWGTP) / (sum(PWGTP) - mean(.x)^2 )): 
-        #Calculates the weighted standard deviation for each variable, using PWGTP as the weight.
-        #.names = "{.col}_sd": Names the new columns as the original column name plus _sd.
-    
-    
+        
     #check if cat_vars is TRUE
     if(!is.null(cat_vars)) {
     #summarize frequency counts    
-        freq_tibble <- tibble |> group_by(across(all_of(cat_vars))) |> summarize(Freq=n())       #Checks if cat_vars is not NULL.
-    # Groups myear_tibble by all columns in cat_vars.
-    #Summarizes the frequency (count) of each group.
+        freq_tibble <- tibble |> group_by(across(all_of(cat_vars))) |> summarize(Freq=n())       
 
     }
     
@@ -317,7 +282,7 @@ summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
             
         #compute standard deviation of all numeric variables (except PWGTP)
         sd_tibble <- tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
-                            ~ sqrt( sum(.x^2 * PWGTP) / sum(PWGTP) - mean(.x)^2 ), .names = "{.col}")) 
+                            ~ sqrt( sum(.x^2 * PWGTP) / sum(PWGTP) - (sum(.x * PWGTP) / sum(PWGTP))^2 ), .names = "{.col}")) 
         
         #summarize frequency counts    
         freq_tibble <- tibble |> select(where(is.factor)) |> count(across(everything()), name = "Freq")
@@ -333,6 +298,8 @@ summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
         #c(..., freq_tibble): Combines the summary tibble and the frequency tibble into a list.
         )
 }
+
+
 
 ```
 
