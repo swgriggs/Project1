@@ -90,20 +90,18 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
    
      #R1.4 - Validate Geography Level
     #State Check
-    if (geography == "State" && as.numeric(geography_level) %in% 0:50)
-       {geography <- "State"
+    if (geography == "State" && (as.numeric(geography_level) %in% 0:50) == FALSE)
+       {stop("Valid State values are between 01 and 50")
 
     #Division Check
-    } else if (geography == "Division" && as.numeric(geography_level) %in% 0:9)
-        
-    {geography <- "Division"
+    } else if (geography == "Division" && (as.numeric(geography_level) %in% 0:9) == FALSE)
+    {stop("Valid Division values are between 0 and 9")
 
     #Region Check
-    } else if (geography == "Region" && as.numeric(geography_level) %in% c(1,2,3,4,9))
-    {geography <- "Region"
+    } else if (geography == "Region" && (as.numeric(geography_level) %in% c(1,2,3,4,9) == FALSE))
+    {stop("Valid Region values are 1,2,3,4,9")
 
-    } else
-    stop("Valid State values are between 01 and 50\n Valid Division values are between 0 and 9\n Valid Region values are 1,2,3,4,9")
+    } 
 
     
     #Create geography argument
@@ -308,7 +306,7 @@ R2.2.4 Test out this function by running summary(*your_census_tibble*) on someth
 ```{r Summary Function Verification}
 syear_test <- get_single_year(num_vars = c("PWGTP","AGEP", "JWDP"),
                        cat_vars = c("SEX", "JWTRNS"),
-                       geography = "State", geography_level = c("02"))
+                       geography = "Region", geography_level = c("5"))
 
 myear_test <- get_multi_years(years = c(2019, 2022), num_vars = c("PWGTP","AGEP", "JWDP"),
                        cat_vars = c("SEX", "JWTRNS"),
