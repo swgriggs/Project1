@@ -12,6 +12,7 @@ Get the usual process to work with a given URL.
 library("tidyverse")
 library("httr")
 library("rjson")
+library(ggplot2)
 ```
 
 ```{r}
@@ -302,6 +303,22 @@ summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
 
 R2.2.4 Test out this function by running summary(*your_census_tibble*) on something you’ve returned from your census API function.
 
+R2.3 - Similarly, let’s create a generic plot() function for a census class tibble. Require the user to specify one categorical variable and one numeric variable for plotting purposes.
+
+```{r Plotting Function}
+
+plot.census <- function()
+{
+ggplot(my_tibble,
+aes(x = get(cat_vars), y = get(num_vars), weight = PWGTP)) +
+ geom_boxplot()
+}
+
+
+# census.plot needs to be a method that summarizes a census object.
+```
+
+
 ```{r Summary Function Verification}
 syear_test <- get_single_year(num_vars = c("PWGTP","AGEP", "JWDP"),
                        cat_vars = c("SEX", "JWTRNS"),
@@ -322,23 +339,6 @@ plot(syear_test)
 plot(myear_test)
 
 ```
-
-R2.3 - Similarly, let’s create a generic plot() function for a census class tibble. Require the user to specify one categorical variable and one numeric variable for plotting purposes.
-
-```{r Plotting Function}
-
-plot.census <- function()
-{
-library(ggplot2) # put this in your setup code chunk
-ggplot(my_tibble,
-aes(x = get(cat_vars), y = get(num_vars), weight = PWGTP)) +
- geom_boxplot()
-}
-
-
-# census.plot needs to be a method that summarizes a census object.
-```
-
 **Web Page**
 
 R 3.1 - Your web page should have a narrative going through your process of creating the above functions and testing them.
