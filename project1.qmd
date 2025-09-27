@@ -94,17 +94,17 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
        {stop("Valid State values are between 01 and 50")
 
     #Division Check
-    } else if (geography == "Division" && (as.numeric(geography_level) %in% 0:9) == FALSE)
+    } else if (geography == "Division" && (as.numeric(geography_level) %in% 1:9) == FALSE)
     {stop("Valid Division values are between 0 and 9")
 
     #Region Check
-    } else if (geography == "Region" && (as.numeric(geography_level) %in% c(1,2,3,4,9) == FALSE))
-    {stop("Valid Region values are 1,2,3,4,9")
+    } else if (geography == "Region" && (as.numeric(geography_level) %in% c(1,2,3,4) == FALSE))
+    {stop("Valid Region values are 1,2,3,4")
 
     } 
 
     
-    #Create geography argument
+    #Create geography argument for the query
     geography <- paste0(geography, ":", paste(geography_level, collapse = ","))
      
      
@@ -112,6 +112,12 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
                   "/acs/acs1/pums?")
     res <- GET(url, query = list(get=paste(c(num_vars, cat_vars), 
                                 collapse=","), `for`=geography))
+    
+    #Check if variables are present in selected year
+    
+    
+    
+    
     df <- get_pums_tibble(res)
 
     #R1.2.1 - Convert Journey to Work Departure Time to HH:MM Format
@@ -213,8 +219,9 @@ get_multi_years <- function(years = c(2022), num_vars = c("AGEP", "PWGTP"),
     map2_dfr(years, ~ mutate(.x, year = .y))
   return(myear_tibble)
 }
+ my_tibble <- myear_tibble
     
-    #lapply(years, function (y) get_single_year(...)): For each year in years, calls the function get_single_year() with the specified parameters, returning a list of tibbles (one per year). The result is a list: each element is a tibble for a specific year. The pipe |> passes this list to map2_dfr(years, ~ mutate(.x, year = .y)):
+     #lapply(years, function (y) get_single_year(...)): For each year in years, calls the function get_single_year() with the specified parameters, returning a list of tibbles (one per year). The result is a list: each element is a tibble for a specific year. The pipe |> passes this list to map2_dfr(years, ~ mutate(.x, year = .y)):
     
     #map2_dfr() iterates over the list of tibbles and the years vector in parallel.
     #mutate(.x, year = .y) is used inside map2_dfr() to add a new column called year to each tibble .x, setting its value to .y (the corresponding year). .x is the current tibble (data for one year). .y is the current year from the years vector.y. #map2_dfr() then binds all the tibbles together row-wise into a single tibble.
@@ -233,14 +240,6 @@ We won’t do this, but we could create a new tibble with each row replicated PW
 **Writing a Generic Function for Summarizing**
 
 R2.1 Create your own custom object class called census.
-
-```{r Census Object Class R2.1}
-
-class(myear_tibble) <- c("census", class(myear_tibble))
-
-```
-
-This line of code sets the class attribute of the object multi_year_tibble so that it is recognized as both a "census" object and whatever its original class was ("tbl").
 
 R2.2 Create your own summary function that produces summary statistics on the census object.
 
@@ -297,7 +296,7 @@ summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
         )
 }
 
-
+# summary.census needs to be a method that summarizes a census object.
 
 ```
 
@@ -306,14 +305,21 @@ R2.2.4 Test out this function by running summary(*your_census_tibble*) on someth
 ```{r Summary Function Verification}
 syear_test <- get_single_year(num_vars = c("PWGTP","AGEP", "JWDP"),
                        cat_vars = c("SEX", "JWTRNS"),
-                       geography = "Region", geography_level = c("5"))
+                       geography = "Region", geography_level = c("2"))
+
+class(syear_test) <- c("census", class(syear_test))
 
 myear_test <- get_multi_years(years = c(2019, 2022), num_vars = c("PWGTP","AGEP", "JWDP"),
                        cat_vars = c("SEX", "JWTRNS"),
                        geography = "State", geography_level = c("02"))
+    
+class(myear_test) <- c("census", class(myear_test))
 
-summary.census(syear_test)
+summary(syear_test)
+summary(myear_test)
 
+plot(syear_test)
+plot(myear_test)
 
 ```
 
@@ -321,11 +327,16 @@ R2.3 - Similarly, let’s create a generic plot() function for a census class ti
 
 ```{r Plotting Function}
 
+plot.census <- function()
+{
 library(ggplot2) # put this in your setup code chunk
 ggplot(my_tibble,
 aes(x = get(cat_vars), y = get(num_vars), weight = PWGTP)) +
  geom_boxplot()
+}
 
+
+# census.plot needs to be a method that summarizes a census object.
 ```
 
 **Web Page**
