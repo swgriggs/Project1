@@ -5,16 +5,20 @@ date: today
 date-format: D MMMM YYYY
 format: html
 ---
-
-Get the usual process to work with a given URL.
-
-```{r, }
-library("tidyverse")
-library("httr")
-library("rjson")
+# Preprocessing
+```{r}
+library(tidyverse)
+library(httr)
+library(rjson)
 library(ggplot2)
 ```
 
+# Get the usual process to work with a given URL.
+This code is simply a proof of concept query of the PUMS Census API. Variables are set for the
+necessary API inputs which are then used to construct an URL to query `cenus.gov`. The `httr::GET()`
+function contains `query` and `for` arguments which receptively take in PUMS API variables and geographic
+region as inputs to finalize the URL and return an http response object. This object can be further
+be parsed to extract the raw character data from the query.
 ```{r}
 variables <- c("PWGTP","AGEP","SEX", "FER", "JWTRNS")
 geography <- "state:01"
@@ -23,48 +27,124 @@ url <- paste0("https://api.census.gov/data/", year, "/acs/acs1/pums?")
 res <- GET(url, query = list(get=paste(variables, collapse=","), `for`=geography))
 ```
 
-Write a helper function to take what is returned by GET() and turn it into a nice tibble.
+# Write a helper function to take what is returned by GET() and turn it into a nice tibble.
+The function `get_pums_tibble` takes in an http response object returned from `httr::GET()`, extracts
+the raw character data using `httr::content`, and parses it into a formatted tibble, which is finally
+returned. 
+The process is given below:
+1. Parses the HTML content with `httr::content`.
+2. Each row of raw html text is returned as a list within a list. Each element must be unlisted into
+    a list of vectors.
+3. The list is converted into a data frame for easier manipulation. However, each row of raw html text
+    becomes a column instead of a row in the data frame. The column names being text row numbers serve
+    no purpose other than more readable output for debugging.
+4. The data frame is converted into a matrix for an easier transpose operation. Transposing the matrix
+    takes each observation represented as a column and transforms it into a row. Once the matrix is
+    transformed into a standard format, it's converted into a tibble.
+5. The variable names are stored in the first row. The first row is set as the column names and then dropped.
+6. The formatted tibble is returned.
 
 ```{r}
 get_pums_tibble <- function(html_page) {
-    content <- content(html_page, as="parsed") #Parses the HTML content.
-    content <- lapply(content, unlist) |> #Unlists each element in the parsed content. This creates a list of vectors.
-                as.data.frame(col.names=1:length(content)) |> #Converts the list to a data frame, with column names as numbers.
-                as.matrix() |> t() |> as_tibble() #Converts the data frame to a matrix, transposes it, and then converts it to a tibble.
-    content <- content |> setNames(content[1,]) |> slice(-1) #Sets the first row as column names.   Then removes the first row (now used as column names)
-    return(content) #returns a tibble.
+    content <- content(html_page, as="parsed") #
+    content <- lapply(content, unlist) |> 
+                as.data.frame(col.names=1:length(content)) |> 
+                as.matrix() |> t() |> as_tibble()
+    content <- content |> setNames(content[1,]) |> slice(-1)
+    return(content)
 }
 ```
 
-**Data Processing Requirements**
+# Data Processing
 
-Write a function to query the API that allows the user to change the following items:
+This code block pulls a list of state codes from `census.gov` needed to check whether the user
+specified state code is correct. On `census.gov` the variable key appears to only exist for 2021 or
+later, but the same codes seem to work.
+```{r}
+# Needed for checking valid state codes
+st_codes <- fromJSON(paste(readLines("https://api.census.gov/data/2022/acs/acs1/pums/variables/ST.json"),
+                           collapse=""))$values$item |> names()
+```
 
-R1.1 - Year of survey (2022 as default). Check that a valid value was given (number between 2010 and 2022)
+The function `get_single_year()` is for parsing a single year of census data from `census.gov` using
+the PUMS API according to user specified numerical and categorical variables, the year, and a
+geographical subset of the data by region, division, or state. The `get_single_year()` function
+itself is too long and ideally would be split into 3 additonal functions. One for validating and
+formatting user input. A second for calculating the midpoint of the time ranges in `JWDP` and `JWAP`
+before converting them into an R time format. Finally, a third function for converting all the
+categorical variables into factors with appropriate labels pulled from `census.gov`'s variable
+descriptions. However, the project didn't require this, so the code will be left in a monolithic
+format.
 
-R1.2 – Specify the numeric variables to be returned (AGEP and PWGTP as default). PWGTP should always be returned. Options for the user should be AGEP, GASP, GRPIP, JWAP (time), JWDP (time), and JWMNP
+The first 50 lines of code in `get_single_year()` are for validating user input for `year`, numeric
+variables, categorical variables, geography subset, and geography level. If any of these inputs are
+not the correct data type, undefined options according to the project requirements, or disallowed
+combinations of variables, then an appropriate error will be thrown. Many values for the correct
+function arguments are hard coded included geography levels except the state codes. Finally since
+variables change from year to year, all user supplied variables will be checked if they exist for
+that given year. If all variables exist the query will proceed, otherwise a warning lets the user
+know which variables aren't present during that year and an empty tibble is returned.
 
-R1.2.1 - Your function should turn variables into numeric values or time values (use the middle of the time period) where appropriate. At least one numeric variable other than PWGTP must be returned
+Once user input is validated, a URL string must be formatted to query the PUMS API. First, a string
+represented the geography subset is formatted, which is then concatenated with the other components
+of the URL. Then, the `httr:GET` function queries `cenus.gov` using the `query` and `for` arguments
+to finalized the URL string and return an http response object. Next, `get_pums_tibble()` processes
+the http object and returns a tibble with the parsed census data stored within. 
 
-R1.3 - Specify the categorical variables to be returned (SEX as default).Options for the user should be FER, HHL, HISPEED, JWTRNS, SCH, SCHL, and SEX.
+The bulk of the code in `get_single_year` contains logic for finding the midpoint of `JWDP` and `JWAP`
+and converting it into HH:MM:SS format with the `hms` package. However, these variables are factors
+corresponding to time ranges represented as strings in a non-standard format. So, first the variable
+descriptions must be pulled from `census.gov` and converted into a map to decode the raw data. However,
+this revealed another issue where the key in the key-value pairs mapping the factor to its description
+all have a length of 3. So, the raw data needs to be padded to match the variable description keys.
+The resulting process to decode the data follows these steps:
 
-R1.3.1 - Your function should turn variables into factors with appropriate levels, where appropriate. At least one categorical variable must be returned. Check that the variables asked for are in this set of variables.
+1. Pad raw data with zeros on the left to a maximum length of 3.
+2. Construct the URL to download the JWDP code mapping for the specified year.
+3. Downloads and reads the JSON file, extracts the mapping of JWDP codes to time ranges, and convert to a list.
+4. Renames the mapping key "0" to "000" to match the padded JWDP raw data.
+5. Loop over each row/observation in the tibble
+    * If the JWDP code is "000" (which means "Not applicable"), sets it to NA.
+    * Otherwise, splits the mapped time range (e.g., "5:00 a.m. to 5:29 a.m.") into start and end times,
+    removes periods, and converts all characters to uppercase.
+    * Parses the start and end times, converts them to numeric (seconds or minutes), and calculates the midpoint.
+    * Assigns the midpoint value back to the JWDP column for that row.
+    * Converts the JWDP column to numeric values (the tibble coerces it back to a character).
+    * Converts the JWDP column to HMS (hour-minute-second) time format.
+    * Removes "JWDP" from the num_vars vector, since it is no longer a numeric variable.
 
-R1.4 – Specify the geography level: All, Region, Division, or State (with the default of All). Check that the value specified by the user is one of the above values
+This approach is likely more complicated than it needs to be, but it was the first solution we developed.
+One major issue with this approach is the for loop which is inherently slower in an interpreted language
+like R, especially when multiple complex statements are nested within. In production, this code
+should be rewritten for optimization. The same process is followed for both `JWDP` and `JWAP`.
 
-R1.4.1 – An optional argument to subset the data (this subsetting should be on the API call itself, not on what is returned - see the examples in the links above). The user should be able to specify specific Regions, Divisions, or States for this part (and only those specified geography levels would be returned) ∗ How you allow them to specify this is up to you (you’ll have to parse it appropriately). The requirement is one state or all states (same for other geography hierarchy).
+The final portion of `get_single_year()` converts all categorical variables into factors with labels
+pulled from the official variable descriptions queried from `census.gov`. The process of converting
+the categorical variables into factors with levels is as follows:
+
+1. Iterates through each variable in the vector cat_vars.
+2. Constructs the URL to download the JSON variable map for the current variable and year.
+3. Downloads the JSON file, reads it as a single string, parse it, and extracts the mapping of codes
+    to labels for the variable.
+4. Removes leading zeros from the code names (except for the value "0"), so that codes in the data
+    (which may not have leading zeros) will match the JSON map keys. 
+5. Converts the column df[[variable]] (for each cat_var) into a factor, using the cleaned names as
+    levels and the corresponding labels from the map as the factor labels.
+    
+Last, the remaining numeric variables are converted from character to numeric and the tibble is returned.
+Also, note there is no data for 2022.
 
 ```{r Single Year Function}
 get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"), 
                             cat_vars = c("SEX"), geography = "State", geography_level = c(":13")) {
-    # R1.1- Validate Survey Year
+    # Validate Survey Year
     if (!is.numeric(year)) {
         stop("Year must be numeric")
     } 
-    if (!(year >= 2010 & year <= 2022)) {
-        stop("Year must be between 2010 and 2022 inclusive")
+    if (!(year %in% c(2010:2019, 2021:2022))) {
+        stop("Year must be between 2010 and 2019 or 2021, 2022")
     }
-    # R1.2 - Validate Numeric Variables
+    # Validate Numeric Variables
     if (!("PWGTP" %in% num_vars)) {
         stop("PWGTP must be included in the numeric variables")
     }
@@ -75,93 +155,75 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
              c("AGEP","GASP","GRPIP","JWAP","JWDP","JWMNP","PWGTP"))) {
         stop("Undefined numeric variable(s)")
     }
-    # R1.3 Validate Categorical Variables
+    # Validate Categorical Variables
     if (length(cat_vars) == 0) {
         stop("At least one categorical variable required")
     }
-    if (!all(cat_vars %in% c("FER", "HHL", "HISPEED", "JWTRNS", "SCH", "SCHL", 
-                             "SEX"))) {
+    if (!all(cat_vars %in% c("FER", "HHL", "HISPEED", "JWTRNS", "SCH", "SCHL", "SEX"))) {
         stop("Undefined categorical variable(s)")
     }
     # Validate Region Variable
-    
     if (!(geography %in% c("State", "Division", "Region"))) {
         stop("Geography must be 'Region', 'Division' or 'State'")
     }
-   
-     #R1.4 - Validate Geography Level
-    #State Check
-    if (geography == "State" && (as.numeric(geography_level) %in% 0:50) == FALSE)
-       {stop("Valid State values are between 01 and 50")
-
-    #Division Check
-    } else if (geography == "Division" && (as.numeric(geography_level) %in% 1:9) == FALSE)
-    {stop("Valid Division values are between 0 and 9")
-
-    #Region Check
-    } else if (geography == "Region" && (as.numeric(geography_level) %in% c(1,2,3,4) == FALSE))
-    {stop("Valid Region values are 1,2,3,4")
-
+    # Validate Geography Level
+    if (geography == "State" && (geography_level %in% st_codes) == FALSE) {
+        stop("Invalid State value. Find defined state codes at
+             https://api.census.gov/data/2022/acs/acs1/pums/variables/ST.json")
     } 
-
+    else if (geography == "Division" && (as.numeric(geography_level) %in% 1:9) == FALSE) {
+        stop("Valid Division values are between 1 and 9")
+    }
+    else if (geography == "Region" && (as.numeric(geography_level) %in% 1:4 == FALSE)) {
+        stop("Valid Region values are between 1 and 4")
+    }
     
+    #Check if variables are present in selected year
+    all_vars <- paste0("https://api.census.gov/data/", as.character(year), "/acs/acs1/pums/variables") |>
+        GET() |> content(as="parsed") |> tail(-1) |> lapply(`[[`, 1) |> unlist()
+    
+    if (!all(c(num_vars, cat_vars) %in% all_vars)) {
+        warning(paste("The following variables: (",
+                      setdiff(c(num_vars, cat_vars), all_vars),
+                      ") are undefined for year",
+                      as.character(year), sep = " "))
+        return(tibble())
+    }
+
     #Create geography argument for the query
     geography <- paste0(geography, ":", paste(geography_level, collapse = ","))
      
-     
-    url <- paste0("https://api.census.gov/data/", as.character(year), 
-                  "/acs/acs1/pums?")
-    res <- GET(url, query = list(get=paste(c(num_vars, cat_vars), 
-                                collapse=","), `for`=geography))
-    
-    #Check if variables are present in selected year
-    
-    
+    url <- paste0("https://api.census.gov/data/", as.character(year), "/acs/acs1/pums?")
+    res <- GET(url, query = list(get=paste(c(num_vars, cat_vars), collapse=","), `for`=geography))
     
     
     df <- get_pums_tibble(res)
 
-    #R1.2.1 - Convert Journey to Work Departure Time to HH:MM Format
+    # Convert Journey to Work Departure Time to HH:MM Format
     if ("JWDP" %in% num_vars && "JWDP" %in% names(df)) {
-    df <- df |> mutate(JWDP = str_pad(JWDP, width = 3, side = "left", pad = "0"))
-
+        
+        df <- df |> mutate(JWDP = str_pad(JWDP, width = 3, side = "left", pad = "0"))
         jwdp_file <- paste0("https://api.census.gov/data/", as.character(year),
                                 "/acs/acs1/pums/variables/JWDP.json")
-        #Creates the URL to download the JWDP code mapping for the specified year.
-        
         jwdp_map <- fromJSON(paste(readLines(jwdp_file), collapse=""))$values$item |> as.list()
-        #Downloads and reads the JSON file, extracts the mapping of JWDP codes to time ranges, and converts it to a list.
 
         names(jwdp_map)[names(jwdp_map) == "0"] <- "000"
-        #Renames the mapping key "0" to "000" to match the padded JWDP codes. This line subsets the names of the keys that are 0 and then converting them to "000"
 
         for (i in 1:nrow(df)) {
-            #Starts a loop over each row in the data frame.
             if (df$JWDP[i] == "000") {
                 df$JWDP[i] <- NA
-            #If the JWDP code is "000" (which means "Not applicable"), sets it to NA.
             } else {
                 iv <- strsplit(jwdp_map[[ df$JWDP[i] ]], " to ")[[1]] |> str_remove_all("\\.") |> 
                     str_to_upper()
-                #Otherwise, splits the mapped time range (e.g., "5:00 a.m. to 5:29 a.m.") into start and end times,
-                #removes periods, and converts to uppercase.
-                
                 mid <- ((as.numeric(parse_time(iv[2])) + as.numeric(parse_time(iv[1])) ) / 2)
-                #Parses the start and end times, converts them to numeric (seconds or minutes), and calculates the midpoint.
                 df$JWDP[i] <- mid
-                #Assigns the midpoint value back to the JWDP column for that row.
             }
         }
         df <- df |> mutate(JWDP = hms::as_hms(as.numeric(JWDP)))
-        #Converts the JWDP column to HMS (hour-minute-second) time format.
-        #Converts the JWDP column to numeric values (if it isn’t already).
-  
-        
         num_vars <- num_vars[num_vars != "JWDP"]
-        # Removes "JWDP" from the num_vars vector, since it is no longer a numeric variable.
     }
     
-    #R1.2.1 - Convert Journey to Work Arrival Time to HH:MM Format
+    # Convert Journey to Work Arrival Time to HH:MM Format
     if ("JWAP" %in% num_vars && "JWAP" %in% names(df)) {
     df <- df |> mutate(JWAP = str_pad(JWAP, width = 3, side = "left", pad = "0"))
 
@@ -185,148 +247,128 @@ get_single_year <- function(year = 2022, num_vars = c("AGEP", "PWGTP"),
         num_vars <- num_vars[num_vars != "JWAP"]
     }
     
-    #R1.3.1 - Convert Categorical Variables into Factors with Levels
-#    cat_var_maps <- list()
+    # Convert Categorical Variables into Factors with Levels
     for (variable in cat_vars) {
-        #Iterates through each variable name in the vector cat_vars.
         var_url <- paste0("https://api.census.gov/data/", year, "/acs/acs1/pums/variables/", variable, ".json")
-        #Constructs the URL to download the JSON codebook for the current variable and year.
         var_map <- fromJSON(paste(readLines(var_url), collapse=""))$values$item
-        #Downloads the JSON file, reads it as a single string, parses it, and extracts the mapping of codes to labels for the variable.
         names(var_map) <- str_replace(names(var_map), "^0+(?!$)", "")
-        #Removes leading zeros from the code names (except for the value "0"), so that codes in the data (which may not have leading zeros) will match the codebook. 
-        
         df[[variable]] <- factor(df[[variable]], levels = names(var_map), labels = unlist(unname(var_map)))
-        #Converts the column df[[variable]] (for each cat_var) into a factor:in the data frame to a factor, using the cleaned code names as levels and the corresponding labels from the codebook as the factor labels.
     }
- 
-    #R1.2.1 - Convert Numeric Variables to Numeric
+    # Convert Numeric Variables to Numeric
     df <- df |> mutate(across(all_of(num_vars), ~ as.numeric(.)))
     
     return(df)
 }
-
-
 ```
 
-R1.5 - write a function that allows the user to specify multiple years of survey data (and all the other options above). This function should call your single year function as many times as needed and then combine the data into one final tibble (a year variable should be included in this final tibble).
+# Write a function that allows the user to specify multiple years of survey data
+The `get_multi_years()` function takes in the same arguments as `get_single_year` with one exception,
+year is a vector of numbers rather than a single number. First `lapplay()` iterates over the
+years vector calling `get_single_year()` for each element which returns a list of tibbles, one
+for each year. `mutate(.x, year = .y) ` is used inside `map2_dfr()` to add a new column called year
+to each tibble `.x,` setting its value to `.y` (the corresponding year).`.x` is the current tibble
+(data for one year). `.y` is the current year from the years vector.`map2_dfr()` then binds all
+the tibbles together row-wise into a single tibble.
 
 ```{r Multi Year Function R1.5}
 get_multi_years <- function(years = c(2022), num_vars = c("AGEP", "PWGTP"),
                             cat_vars = c("SEX"), geography = "State", geography_level = c("13")) {
-  myear_tibble <- lapply(years, function(y) 
-    get_single_year(y, num_vars, cat_vars, geography, geography_level)
-  ) |> 
-    map2_dfr(years, ~ mutate(.x, year = .y))
-  return(myear_tibble)
+    myear_tibble <- lapply(years, function(y) 
+        get_single_year(y, num_vars, cat_vars, geography, geography_level)) |> 
+        map2_dfr(years, ~ mutate(.x, year = .y))
+    return(myear_tibble)
 }
- my_tibble <- myear_tibble
-    
-     #lapply(years, function (y) get_single_year(...)): For each year in years, calls the function get_single_year() with the specified parameters, returning a list of tibbles (one per year). The result is a list: each element is a tibble for a specific year. The pipe |> passes this list to map2_dfr(years, ~ mutate(.x, year = .y)):
-    
-    #map2_dfr() iterates over the list of tibbles and the years vector in parallel.
-    #mutate(.x, year = .y) is used inside map2_dfr() to add a new column called year to each tibble .x, setting its value to .y (the corresponding year). .x is the current tibble (data for one year). .y is the current year from the years vector.y. #map2_dfr() then binds all the tibbles together row-wise into a single tibble.
-
-
-
-
 ```
 
-**Obtaining Person Level Records**
-
-Lastly, we need to process the data in our tibble appropriately. The PWGTP variable actually represents the number of (people) observations there should be for a particular row. PWGTP is the number of people in a household. If we wanted to look at individuals, we would have to create new rows to represent the individuals.
-
-We won’t do this, but we could create a new tibble with each row replicated PWGTP times. (This would create very large data frames in some instances and processing would be slow!)
-
-**Writing a Generic Function for Summarizing**
-
-R2.1 Create your own custom object class called census.
-
-R2.2 Create your own summary function that produces summary statistics on the census object.
-
-R2.2.1 For the census summary method, let’s write a function that produces means and standard deviations for our numeric variable(s) and counts for our categorical variable(s).
-
+# Generic Function for Summarizing
 R2.2.2 - This function should take three arguments: the tibble with class census, the numeric variable(s) to summarize, the categorical variable(s) to summarize.
 
 R2.2.3 - By default, it should summarize all numeric variables (other than PWGTP) and all categorical variables in the tibble. However, the user should be able to specify the variables they’d like to summarize if they’d like.
 
-If num_vars = cat_vars = NULL, return a list of tibbles from my_tibble. If not, then return a list of tibbles based on the arguments in num_vars and cat_vars. PWGTP is a frequency count. See project prompt. Return the means and standard deviations as a named list.
+This method belongs to the `census` class which is an object of type `tibble()` returned from a call
+the either `get_single_year()` or `get_multi_year()`. This method will specify the behavior of the
+generic function `summary()` uniquely for a `census` object. The function arguments take in a
+census tibble and optionally vectors of numeric and categorical variables. By default, the weighted means
+and standard deviations of all numeric variables and the weighted counts of all categorical variables
+will be returned. However, if the user specifies a vector of numeric or categorical variables in the
+function call, only summaries of those variables will be returned. `PWGTP` being a frequency count per household
+will not be summarized and will act as the weight for the means, standard deviations, and overall counts
+for each level of the categorical variables.
+
+The `summarise()` function is used across all numeric variables excepting `PWGTP` with the provided
+weighted mean and standard deviation formulas. The resulting summary statistic is named according to
+the column being summarized. The categorical variables are counted using `group_by()` on each
+categorical variable, before creating a new variable called `Freq` using `summarize` to count
+each level of those groups while scaling each row by `PWGTP`. The numeric summary tibbles are bound
+together with a row for each summary statistic, in this case two, and a column for each numeric
+variable summarized. This numeric summary tibble and the frequency tibble are finally returned as a
+vector.
 
 ```{r Summary Function R2.2}
 summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
-    #check if num_vars is TRUE
+    # Tibbles to store output
     mean_tibble <- sd_tibble <- freq_tibble <- NULL
-    
+    # Check if numeric variables are specified
     if (!is.null(num_vars)) {
-        mean_tibble <- tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
+        mean_tibble <- tibble |> summarise(across(all_of(num_vars) & !all_of(""),
                                          ~ sum(.x * PWGTP) / sum(PWGTP), .names = "{.col}_mean"))
         
         sd_tibble <- tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
-                        ~ sqrt(sum(.x^2 * PWGTP) / sum(PWGTP) - (sum(.x * PWGTP) / sum(PWGTP))^2 ), .names = "{.col}_sd"))
+                        ~ sqrt(sum(.x^2 * PWGTP) / sum(PWGTP) - (sum(.x * PWGTP) / sum(PWGTP))^2 ),
+                        .names = "{.col}_sd"))
     }
-        
-    #check if cat_vars is TRUE
+    # Check if categorical variables are specified
     if(!is.null(cat_vars)) {
-    #summarize frequency counts    
-        freq_tibble <- tibble |> group_by(across(all_of(cat_vars))) |> summarize(Freq=n())       
-
+        freq_tibble <- tibble |> group_by(across(all_of(cat_vars))) |>
+                                    summarize(Freq = sum(PWGTP * n()))       
     }
-    
-    #default - return list of tibbles from my_tibble
+    # Default - return summaries of all numeric and counts of all categorical
     if (is.null(num_vars) && is.null(cat_vars)) {
-        #compute means of all numeric variables (except PWGTP)
+
         mean_tibble <- tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
                                              ~ sum(.x * PWGTP) / sum(PWGTP), .names = "{.col}"))
             
-        #compute standard deviation of all numeric variables (except PWGTP)
         sd_tibble <- tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
-                            ~ sqrt( sum(.x^2 * PWGTP) / sum(PWGTP) - (sum(.x * PWGTP) / sum(PWGTP))^2 ), .names = "{.col}")) 
+                            ~ sqrt( sum(.x^2 * PWGTP) / sum(PWGTP) - (sum(.x * PWGTP) / sum(PWGTP))^2 ),
+                            .names = "{.col}")) 
         
-        #summarize frequency counts    
-        freq_tibble <- tibble |> select(where(is.factor)) |> count(across(everything()), name = "Freq")
+        freq_tibble <- tibble |> select(where(is.factor)) |> 
+                                group_by(across(everything())) |>
+                                summarize(Freq = sum(PWGTP * n()))
     }
+    
     return(c(
         bind_rows(mean_tibble, sd_tibble) |>
-        #Stacks the mean and standard deviation tibbles row-wise.
             mutate(stat = c("Mean", "Standard Deviation")) |>
-            #Adds a stat column labeling each row.
-            select(stat, everything()),
-            #Moves the stat column to the front.
-        freq_tibble)
-        #c(..., freq_tibble): Combines the summary tibble and the frequency tibble into a list.
+            select(stat, everything()), freq_tibble),
+        freq_tibble
         )
 }
-
-# summary.census needs to be a method that summarizes a census object.
-
 ```
+
+R2.1 Create your own custom object class called census.
 
 R2.2.4 Test out this function by running summary(*your_census_tibble*) on something you’ve returned from your census API function.
 
 R2.3 - Similarly, let’s create a generic plot() function for a census class tibble. Require the user to specify one categorical variable and one numeric variable for plotting purposes.
 
 ```{r Plotting Function}
-
-plot.census <- function()
-{
-ggplot(my_tibble,
-aes(x = get(cat_vars), y = get(num_vars), weight = PWGTP)) +
- geom_boxplot()
+plot.census <- function() {
+    ggplot(my_tibble,
+           aes(x = get(cat_vars), y = get(num_vars), weight = PWGTP)) + 
+            geom_boxplot()
 }
-
-
-# census.plot needs to be a method that summarizes a census object.
 ```
 
 
 ```{r Summary Function Verification}
-syear_test <- get_single_year(num_vars = c("PWGTP","AGEP", "JWDP"),
+syear_test <- get_single_year(num_vars = c("PWGTP","AGEP"),
                        cat_vars = c("SEX", "JWTRNS"),
-                       geography = "Region", geography_level = c("2"))
+                       geography = "State", geography_level = c("02"))
 
 class(syear_test) <- c("census", class(syear_test))
 
-myear_test <- get_multi_years(years = c(2019, 2022), num_vars = c("PWGTP","AGEP", "JWDP"),
+myear_test <- get_multi_years(years = c(2019, 2022), num_vars = c("PWGTP","AGEP"),
                        cat_vars = c("SEX", "JWTRNS"),
                        geography = "State", geography_level = c("02"))
     
@@ -337,7 +379,6 @@ summary(myear_test)
 
 plot(syear_test)
 plot(myear_test)
-
 ```
 **Web Page**
 
