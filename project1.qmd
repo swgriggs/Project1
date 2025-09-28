@@ -292,14 +292,14 @@ function call, only summaries of those variables will be returned. `PWGTP` being
 will not be summarized and will act as the weight for the means, standard deviations, and overall counts
 for each level of the categorical variables.
 
-The `summarise()` function is used across all numeric variables excepting `PWGTP` with the provided
+The `summarize()` function is used across all numeric variables excepting `PWGTP` with the provided
 weighted mean and standard deviation formulas. The resulting summary statistic is named according to
-the column being summarized. The categorical variables are counted using `group_by()` on each
-categorical variable, before creating a new variable called `Freq` using `summarize` to count
-each level of those groups while scaling each row by `PWGTP`. The numeric summary tibbles are bound
-together with a row for each summary statistic, in this case two, and a column for each numeric
-variable summarized. This numeric summary tibble and the frequency tibble are finally returned as a
-vector.
+the column being summarized. The categorical variables are counted my mapping the list of categorical
+variables to a function which first takes the data tibble. The tibble is groups it by each categorical
+one at a time, before `summarize()` adds a new variable called `Freq` by summing `PWGTP` from all observations
+for a given category level. The numeric summary tibbles are bound together with a row for each
+summary statistic, in this case two, and a column for each numeric variable summarized. This numeric
+summary tibble and the frequency tibbles are finally returned as a list.
 
 ```{r Summary Function R2.2}
 summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
@@ -309,10 +309,10 @@ summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
     tibble <- tibble |> select(-any_of("year"))
     # Check if numeric variables are specified
     if (!is.null(num_vars)) {
-        mean_tibble <- tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
+        mean_tibble <- tibble |> summarize(across(all_of(num_vars) & !all_of("PWGTP"),
                                          ~ sum(.x * PWGTP) / sum(PWGTP), .names = "{.col}"))
         
-        sd_tibble <- tibble |> summarise(across(all_of(num_vars) & !all_of("PWGTP"),
+        sd_tibble <- tibble |> summarize(across(all_of(num_vars) & !all_of("PWGTP"),
                         ~ sqrt(sum(.x^2 * PWGTP) / sum(PWGTP) - (sum(.x * PWGTP) / sum(PWGTP))^2 ),
                         .names = "{.col}"))
     }
@@ -325,15 +325,15 @@ summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
     # Default - return summaries of all numeric and counts of all categorical
     if (is.null(num_vars) && is.null(cat_vars)) {
 
-        mean_tibble <- tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
+        mean_tibble <- tibble |> summarize(across(where(is.numeric) & !all_of("PWGTP"),
                                              ~ sum(.x * PWGTP) / sum(PWGTP), .names = "{.col}"))
             
-        sd_tibble <- tibble |> summarise(across(where(is.numeric) & !all_of("PWGTP"),
+        sd_tibble <- tibble |> summarize(across(where(is.numeric) & !all_of("PWGTP"),
                             ~ sqrt( sum(.x^2 * PWGTP) / sum(PWGTP) - (sum(.x * PWGTP) / sum(PWGTP))^2 ),
                             .names = "{.col}")) 
         
         cat_vars <- tibble |> select(where(is.factor)) |> names()
-        freq_tibbles <- map(set_names(cat_vars),
+        freq_tibbles <- map(cat_vars,
                             function(v) {tibble |> group_by(.data[[v]]) |>
                                     summarize(Freq = sum(PWGTP), .groups = "drop")})
     }
