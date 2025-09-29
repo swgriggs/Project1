@@ -13,6 +13,7 @@ library(tidyverse)
 library(httr)
 library(rjson)
 library(ggplot2)
+library(quantreg)
 ```
 
 # The usual process to work with a given URL.
@@ -279,14 +280,15 @@ summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
 ```
 
 # Generic Function for Plotting
-plot.census is a generic plot() function for a census class tibble. It requires the user to supply arguments for a tibble, one categorical variable and one numeric variables. The plot function uses ggplot, the aesthetic function and geom_boxplot function to create .....
+plot.census is a generic plot() function for a census class tibble. It requires the user to supply arguments for a tibble, one categorical variable and one numeric variables. The plot function uses ggplot, the aesthetic function and geom_boxplot function to create boxplots of the categorical variable levels on the x-axis and the numeric variable on the y-axis.
 
 ```{r Generic Plotting Function}
 
 plot.census <- function(my_tibble, cat_var, num_var) {
     ggplot(my_tibble,
-           aes(x = cat_var, y = num_var,
-               weight = PWGTP)) + 
+           aes(x = get(cat_var), y = get(num_var),
+               weight = PWGTP)) +
+               labs(x = cat_var, y = num_var) + 
             geom_boxplot()
 }
 
@@ -337,7 +339,7 @@ class(syear_test) <- c("census", class(syear_test))
 class(myear_test) <- c("census", class(myear_test))
 ```
 
-**Web Page**
-
 # Investigation (Research Question)
-You should have a section at the end where you investigate something interesting from the data using your API function and plotting/summarizing functions.
+Does the distribution of travel time to work differ according to household language for Georgia residents? 
+
+**Web Page**
