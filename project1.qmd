@@ -30,7 +30,14 @@ res <- GET(url, query = list(get=paste(variables, collapse=","), `for`=geography
 
 # Helper function to take what is returned by GET() and turn it into a nice tibble.
 
-The function `get_pums_tibble` takes in an http response object returned from `httr::GET()`, extracts the raw character data using `httr::content`, and parses it into a formatted tibble, which is finally returned. The process is given below: 1. Parses the HTML content with `httr::content`. 2. Each row of raw html text is returned as a list within a list. Each element must be unlisted into a list of vectors. 3. The list is converted into a data frame for easier manipulation. However, each row of raw html text becomes a column instead of a row in the data frame. The column names being text row numbers serve no purpose other than more readable output for debugging. 4. The data frame is converted into a matrix for an easier transpose operation. Transposing the matrix takes each observation represented as a column and transforms it into a row. Once the matrix is transformed into a standard format, it's converted into a tibble. 5. The variable names are stored in the first row. The first row is set as the column names and then dropped. 6. The formatted tibble is returned.
+The function `get_pums_tibble` takes in an http response object returned from `httr::GET()`, extracts the raw character data using `httr::content`, and parses it into a formatted tibble, which is finally returned. The process is given below:  
+
+1. Parses the HTML content with `httr::content`.  
+2. Each row of raw html text is returned as a list within a list. Each element must be unlisted into a list of vectors.  
+3. The list is converted into a data frame for easier manipulation. However, each row of raw html text becomes a column instead of a row in the data frame. The column names being text row numbers serve no purpose other than more readable output for debugging.  
+4. The data frame is converted into a matrix for an easier transpose operation. Transposing the matrix takes each observation represented as a column and transforms it into a row. Once the matrix is transformed into a standard format, it's converted into a tibble.  
+5. The variable names are stored in the first row. The first row is set as the column names and then dropped.  
+6. The formatted tibble is returned.
 
 ```{r Helper Function}
 get_pums_tibble <- function(html_page) {
@@ -51,10 +58,9 @@ This code block pulls a list of state codes from `census.gov` needed to check wh
 # Needed for checking valid state codes
 st_codes <- fromJSON(paste(readLines("https://api.census.gov/data/2022/acs/acs1/pums/variables/ST.json"), collapse=""))$values$item |> names()
 ```
-
 # Single Year Function
 
-The function `get_single_year()` is for parsing a single year of census data from `census.gov` using the PUMS API according to user specified numerical and categorical variables, the year, and a geographical subset of the data by region, division, or state. The `get_single_year()` function itself is too long and ideally would be split into 3 additonal functions. One for validating and formatting user input. A second for calculating the midpoint of the time ranges in `JWDP` and `JWAP` before converting them into an R time format. Finally, a third function for converting all the categorical variables into factors with appropriate labels pulled from `census.gov`'s variable descriptions. However, the project didn't require this, so the code will be left in a monolithic format.
+The function `get_single_year()` is for parsing a single year of census data from `census.gov` using the PUMS API according to user specified numerical and categorical variables, the year, and a geographical subset of the data by region, division, or state. 
 
 The first 50 lines of code in `get_single_year()` are for validating user input for `year`, numeric variables, categorical variables, geography subset, and geography level. If any of these inputs are not the correct data type, undefined options according to the project requirements, or disallowed combinations of variables, then an appropriate error will be thrown. Many values for the correct function arguments are hard coded included geography levels except the state codes. Finally since variables change from year to year, all user supplied variables will be checked if they exist for that given year. If all variables exist the query will proceed, otherwise a warning lets the user know which variables aren't present during that year and an empty tibble is returned.
 
@@ -284,11 +290,11 @@ plot.census is a generic plot() function for a census class tibble. It requires 
 
 ```{r Generic Plotting Function}
 
-plot.census <- function(my_tibble, cat_var, num_var) {
+plot.census <- function(my_tibble, num_var, cat_var) {
     ggplot(my_tibble,
            aes(x = get(cat_var), y = get(num_var),
                weight = PWGTP)) +
-               labs(x = cat_var, y = num_var) + 
+               labs(title = "Generic Plot Function", x = cat_var, y = num_var) + 
             geom_boxplot()
 }
 
@@ -314,13 +320,12 @@ syear_test <- get_single_year(num_vars = c("PWGTP","AGEP","JWDP"),
                        cat_vars = c("SEX", "JWTRNS"),
                        geography = "State", geography_level = c("02"))
 
-#Add Class Census to Single Year Object
-class(syear_test) <- c("census", class(syear_test))
-
-#Add Class Census to Multi Year Object
 myear_test <- get_multi_years(years = c(2019, 2022), num_vars = c("PWGTP","AGEP","JWDP"),
                        cat_vars = c("SEX", "JWTRNS"),
                        geography = "State", geography_level = c("02"))
+
+#Add Class Census to Single Year Object
+class(syear_test) <- c("census", class(syear_test))
 
 #Add Class Census to Multi Year Object
 class(myear_test) <- c("census", class(myear_test))
@@ -329,17 +334,71 @@ summary(syear_test)
 summary(myear_test)
 
 plot(syear_test, cat_var = "SEX", num_var = "AGEP" )
-plot(myear_test)
+plot(myear_test, cat_var = "JWTRNS", num_var = "AGEP")
 
-
-#Single Year Object Class
-class(syear_test) <- c("census", class(syear_test))
-
-#Multi Year Object Class
-class(myear_test) <- c("census", class(myear_test))
 ```
 
 # Investigation (Research Question)
-Does the distribution of travel time to work differ according to household language for Georgia residents? 
+Is there a difference between SEX for Gross Rent as Percent of household income over past 12 months (GASP) for Georgia Residents in 2021 and 2022? 
+```{r Research Question Gross Rent Percentage of Household Income by Sex}
 
-**Web Page**
+georgia_2122 <- get_multi_years(years = c(2021, 2022), num_vars = c("PWGTP","GASP"),
+                       cat_vars = c("SEX"),
+                       geography = "State", geography_level = c("13"))
+
+class(georgia_2122) <- c("census", class(georgia_2122))
+
+summary(georgia_2122, num_vars = "GASP", cat_vars = "SEX")
+
+# Research Question Plots 
+
+#Plot 1 - Generic Plot Function
+plot(georgia_2122, num_var = "GASP", cat_var = "SEX")
+
+#Plot 2 - Generic Plot Function with Outliers Removed
+georgia_2122 |> ggplot(aes(x = SEX, y = GASP,
+                weight = PWGTP)) +
+                labs(title = "Generic Plot with Outliers Removed", x = "SEX", y = "GASP") +
+                geom_boxplot(outlier.shape = NA)
+
+#Plot 3 - Generic Plot Function with Range y = 0 - 250
+georgia_2122 |> ggplot(aes(x = SEX, y = GASP,
+                weight = PWGTP)) +
+                labs(title = "Generic Plot with Focus on IQR", 
+                     x = "SEX", y = "GASP") +
+                    geom_boxplot() +
+                    coord_cartesian(ylim = c(0, 250))
+
+#Plot 4 - Generic Plot Function with Range y = 0 - 50 
+georgia_2122 |> ggplot(aes(x = SEX, y = GASP,
+                weight = PWGTP)) +
+                labs(title = "Generic Plot with Focus on Median", 
+                     x = "SEX", y = "GASP") +
+                    geom_boxplot() +
+                    coord_cartesian(ylim = c(0, 50))
+
+```
+
+**Summary of Research**  
+In order to answer the research question, we first tried the generic plot function for GASP vs. SEX (see Plot #1 in code chunk above). From inspection of this plot, we can see that the data is highly right skewed numeric data. The skewness distorts the axis for the numeric variable of interest (GASP), and as a result, the plot does not provide useful information.
+
+In order to address this limitation, we took the generic plotting function outside of the function and made three (3) different plots to get to a useful result:  
+
+1. First, we removed outliers to determine the effect on the range of GASP (see Plot #2 in Research Question code chunk above). With outliers were removed, we were still unable to determine the shape of the distribution around the highest density interval, represented by the Inter-Quartile Range (IQR).  
+
+2. Second, we zoomed in on the Box and Whiskers. We were still unable to determine if there was a meaningful difference between males and females (see Plot #3 in Research Question code chunk) Note that the IQR for this plot is the same but the medians are different.  
+
+3. Finally, we generated a third box plot, zooming in on the median. Here, we see that the median GASP for females is approximately 20, while the median GASP for males is approximately 3 (see Plot #4 in code chunk above).
+
+**Conclusion on Research**  
+This suggests that the distributions of GASP between males and females are similar in shape, especially in the tails, but the center of the distributions appear to be different. Whether or not this is a meaningful difference we cannot tell without numerical methods that quantify variability beyond the capabilities of the boxplot.
+
+
+
+**Questionable Content**  
+
+*From Single Year Function Text*  
+The `get_single_year()` function itself is too long and ideally would be split into 3 additonal functions. One for validating and formatting user input. A second for calculating the midpoint of the time ranges in `JWDP` and `JWAP` before converting them into an R time format. Finally, a third function for converting all the categorical variables into factors with appropriate labels pulled from `census.gov`'s variable descriptions. However, the project didn't require this, so the code will be left in a monolithic format.
+
+*From Research Question Text*  
+From the results of our research on the question of interest, we conclude that the generic summary and plot functions are limited because we cannot supply ggplot options, filtering and selection statements. Therefore, the generic functions are not particularly useful to answer research questions on the data. The functions are useful for proof of concept, showing we understand how to create class methods, but not useful for exploratory data analysis. 
