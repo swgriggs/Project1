@@ -1,6 +1,6 @@
 ---
 title: "ST-558 Project 1"
-author: ""
+author: "Stephen Griggs, Norman Allie"
 date: today
 date-format: D MMMM YYYY
 format: html
@@ -16,7 +16,7 @@ library(ggplot2)
 library(quantreg)
 ```
 
-# The usual process to work with a given URL.
+# Get the usual process to work with a given URL.
 
 This code is simply a proof of concept query of the PUMS Census API. Variables are set for the necessary API inputs which are then used to construct an URL to query `cenus.gov`. The `httr::GET()` function contains `query` and `for` arguments which receptively take in PUMS API variables and geographic region as inputs to finalize the URL and return an http response object. This object can be further be parsed to extract the raw character data from the query.
 
@@ -69,27 +69,27 @@ Once user input is validated, a URL string must be formatted to query the PUMS A
 The bulk of the code in `get_single_year` contains logic for finding the midpoint of `JWDP` and `JWAP` and converting it into HH:MM:SS format with the `hms` package. However, these variables are factors corresponding to time ranges represented as strings in a non-standard format. So, first the variable descriptions must be pulled from `census.gov` and converted into a map to decode the raw data. However, this revealed another issue where the key in the key-value pairs mapping the factor to its description all have a length of 3. So, the raw data needs to be padded to match the variable description keys. The resulting process to decode the data follows these steps:
 
 1.  Pad raw data with zeros on the left to a maximum length of 3.
-2.  Construct the URL to download the JWDP code mapping for the specified year.
-3.  Downloads and reads the JSON file, extracts the mapping of JWDP codes to time ranges, and convert to a list.
-4.  Renames the mapping key "0" to "000" to match the padded JWDP raw data.
+2.  Construct the URL to download the `JWDP` code mapping for the specified year.
+3.  Downloads and reads the JSON file, extracts the mapping of `JWDP` codes to time ranges, and convert to a list.
+4.  Renames the mapping key "0" to "000" to match the padded `JWDP` raw data.
 5.  Loop over each row/observation in the tibble
-    -   If the JWDP code is "000" (which means "Not applicable"), sets it to NA.
+    -   If the `JWDP` code is "000" (which means "Not applicable"), sets it to NA.
     -   Otherwise, splits the mapped time range (e.g., "5:00 a.m. to 5:29 a.m.") into start and end times, removes periods, and converts all characters to uppercase.
     -   Parses the start and end times, converts them to numeric (seconds or minutes), and calculates the midpoint.
     -   Assigns the midpoint value back to the JWDP column for that row.
-    -   Converts the JWDP column to numeric values (the tibble coerces it back to a character).
-    -   Converts the JWDP column to HMS (hour-minute-second) time format.
-    -   Removes "JWDP" from the num_vars vector, since it is no longer a numeric variable.
+    -   Converts the `JWDP` column to numeric values (the tibble coerces it back to a character).
+    -   Converts the `JWDP` column to HMS (hour-minute-second) time format.
+    -   Removes `JWDP` from the `num_vars` vector, since it is no longer a numeric variable.
 
 This approach is likely more complicated than it needs to be, but it was the first solution we developed. One major issue with this approach is the for loop which is inherently slower in an interpreted language like R, especially when multiple complex statements are nested within. In production, this code should be rewritten for optimization. The same process is followed for both `JWDP` and `JWAP`.
 
 The final portion of `get_single_year()` converts all categorical variables into factors with labels pulled from the official variable descriptions queried from `census.gov`. The process of converting the categorical variables into factors with levels is as follows:
 
-1.  Iterates through each variable in the vector cat_vars.
+1.  Iterates through each variable in the vector `cat_vars`.
 2.  Constructs the URL to download the JSON variable map for the current variable and year.
 3.  Downloads the JSON file, reads it as a single string, parse it, and extracts the mapping of codes to labels for the variable.
 4.  Removes leading zeros from the code names (except for the value "0"), so that codes in the data (which may not have leading zeros) will match the JSON map keys.
-5.  Converts the column df\[\[variable\]\] (for each cat_var) into a factor, using the cleaned names as levels and the corresponding labels from the map as the factor labels.
+5.  Converts the column `df\[\[variable\]\]` (for each `cat_var`) into a factor, using the cleaned names as levels and the corresponding labels from the map as the factor labels.
 
 Last, the remaining numeric variables are converted from character to numeric and the tibble is returned. Note there is no data for 2020.
 
@@ -286,7 +286,7 @@ summary.census <- function(tibble, num_vars = NULL, cat_vars = NULL) {
 ```
 
 # Generic Function for Plotting
-plot.census is a generic plot() function for a census class tibble. It requires the user to supply arguments for a tibble, one categorical variable and one numeric variables. The plot function uses ggplot, the aesthetic function and geom_boxplot function to create boxplots of the categorical variable levels on the x-axis and the numeric variable on the y-axis.
+`plot.census` is a generic `plot()` function for a census class tibble. It requires the user to supply arguments for a tibble, one categorical variable and one numeric variables. The plot function uses ggplot, the aesthetic function and geom_boxplot function to create boxplots of the categorical variable levels on the x-axis and the numeric variable on the y-axis.
 
 ```{r Generic Plotting Function}
 
@@ -300,18 +300,18 @@ plot.census <- function(my_tibble, num_var, cat_var) {
 
 ```
 
-# Function Verification and Objects of Class 'Census'
+# Function Verification and Objects of Class `Census`
 
 This code chunk contains code that verifies all functions in this project:
 
--   get_single_year, called by syear_test
--   get_multi_years, called by myear \_test
--   summary.census, called by summary(syear_test) or summary(myear_test)
--   plot.census, called by plot(syear_test) or plot(myear_test)
+-   `get_single_year`, called by syear_test
+-   `get_multi_years`, called by `myear_test`
+-   `summary.census`, called by `summary(syear_test)` or `summary(myear_test)`
+-   `plot.census`, called by `plot(syear_test)` or `plot(myear_test)`
 
-syear_test calls the single year function with arguments supplied for numeric, categorical, geography and geography level. Year is the default value in the single year function. myear_test calls the multi-year function with arguments supplied for years, numeric, categorical, geography, and geography level.
+`syear_test` calls the single year function with arguments supplied for numeric, categorical, geography and geography level. Year is the default value in the single year function. `myear_test` calls the multi-year function with arguments supplied for years, numeric, categorical, geography, and geography level.
 
-summary(syear_test) and summary(myear_test) calls the generic summary method for objects of type census. plot(syear_test) and plot(myear_test) calls the generic plot method for objects of type census.
+`summary(syear_test)` and `summary(myear_test)` calls the generic summary method for objects of type census. `plot(syear_test)` and `plot(myear_test)` calls the generic plot method for objects of type census.
 
 This section also shows the two statements that are used to create objects of class Census and add this class to the single year tibble (syear_test) and multi-year tibble (myear_test). Both of these objects are type tibble when returned by the single year and multi-year functions.
 
@@ -339,8 +339,8 @@ plot(myear_test, cat_var = "JWTRNS", num_var = "AGEP")
 ```
 
 # Investigation (Research Question)
-Is there a difference between SEX for Gross Rent as Percent of household income over past 12 months (GASP) for Georgia Residents in 2021 and 2022? 
-```{r Research Question Gross Rent Percentage of Household Income by Sex}
+Is there a difference between SEX for monthly gas cost (GASP) for Georgia Residents in 2021 and 2022? 
+```{r Research Question Monthly Gas Cost by Sex}
 
 georgia_2122 <- get_multi_years(years = c(2021, 2022), num_vars = c("PWGTP","GASP"),
                        cat_vars = c("SEX"),
@@ -392,13 +392,3 @@ In order to address this limitation, we took the generic plotting function outsi
 
 **Conclusion on Research**  
 This suggests that the distributions of GASP between males and females are similar in shape, especially in the tails, but the center of the distributions appear to be different. Whether or not this is a meaningful difference we cannot tell without numerical methods that quantify variability beyond the capabilities of the boxplot.
-
-
-
-**Questionable Content**  
-
-*From Single Year Function Text*  
-The `get_single_year()` function itself is too long and ideally would be split into 3 additonal functions. One for validating and formatting user input. A second for calculating the midpoint of the time ranges in `JWDP` and `JWAP` before converting them into an R time format. Finally, a third function for converting all the categorical variables into factors with appropriate labels pulled from `census.gov`'s variable descriptions. However, the project didn't require this, so the code will be left in a monolithic format.
-
-*From Research Question Text*  
-From the results of our research on the question of interest, we conclude that the generic summary and plot functions are limited because we cannot supply ggplot options, filtering and selection statements. Therefore, the generic functions are not particularly useful to answer research questions on the data. The functions are useful for proof of concept, showing we understand how to create class methods, but not useful for exploratory data analysis. 
